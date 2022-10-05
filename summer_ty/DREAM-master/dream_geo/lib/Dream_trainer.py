@@ -84,10 +84,10 @@ class FocolLoss(torch.nn.Module):
 class Loss(torch.nn.Module):
     def __init__(self, opt):
         super(Loss, self).__init__()
-        # self.crit = torch.nn.MSELoss()
-        self.crit = FocolLoss()
-        # self.crit_reg = RegL1Loss()
-        self.crit_reg = torch.nn.SmoothL1Loss() 
+        self.crit = torch.nn.MSELoss()
+        # self.crit = FocolLoss()
+        self.crit_reg = RegL1Loss()
+        # self.crit_reg = torch.nn.SmoothL1Loss() 
         self.opt = opt
     
     def _sigmoid_output(self, output):
@@ -104,7 +104,7 @@ class Loss(torch.nn.Module):
         losses = {head: 0 for head in opt.heads}
         weights = {head : 1 for head in opt.heads}  
         weights['tracking'] = 0.0
-        weights['hm'] = 0.01 
+        weights['reg'] = 0.01 
         
         
         for s in range(opt.num_stacks):
@@ -119,7 +119,8 @@ class Loss(torch.nn.Module):
             output = self._sigmoid_output(output)
             
             if 'hm' in output:
-                losses['hm'] += self.crit(output['hm'], batch["next_belief_maps"].to(opt.device), batch["next_keypoint_projections_output"].to(opt.device)) / opt.num_stacks
+#                losses['hm'] += self.crit(output['hm'], batch["next_belief_maps"].to(opt.device), batch["next_keypoint_projections_output"].to(opt.device)) / opt.num_stacks
+                losses['hm'] += self.crit(output['hm'], batch["next_belief_maps"].to(opt.device)) / opt.num_stacks
             
             regression_heads = [
             'reg', 'tracking'] 
@@ -128,12 +129,12 @@ class Loss(torch.nn.Module):
             # track表示两帧之间的差距，
             # 所以我们这里不需要wh和ltrb_amodal
             for head in regression_heads:
-#                losses[head] += self.crit_reg(
-#                    output[head], batch[head], batch["next_keypoint_projections_output_int"]
-#                    ) / opt.num_stacks
-                 losses[head] += self.crit_reg(
-                     output[head], batch[head].to(opt.device)
-                 ) / opt.num_stacks
+                losses[head] += self.crit_reg(
+                    output[head], batch[head], batch["next_keypoint_projections_output_int"]
+                    ) / opt.num_stacks
+#                 losses[head] += self.crit_reg(
+#                     output[head], batch[head].to(opt.device)
+#                 ) / opt.num_stacks
         
         losses['tot'] = 0
         for head in opt.heads:
@@ -180,10 +181,12 @@ class Trainer(object):
             for batch_idx, batch in enumerate(tqdm(data_loader)):
                 torch.cuda.empty_cache()
                 pre_img = batch['prev_image_rgb_input'].to(device) # bs x 3 x H x W
-                pre_hm = batch['prev_belief_maps_as_input_resolution'].to(device) # bs x 1 x H x W
+                pre_hm = batch['prev_belief_maps'].to(device) # bs x H x W
                 pre_hm = pre_hm.unsqueeze(1)
+                repro_hm = batch["repro_belief_maps"].to(device)
+                repro_hm = repro_hm.unsqueeze(1)
                 next_img = batch['next_image_rgb_input'].to(device)
-                outputs = model(next_img, pre_img, pre_hm)
+                outputs = model(next_img, pre_img, pre_hm, repro_hm)
                 loss, loss_stats = self.loss(outputs, batch)
                 
                 loss_all_this_batch = loss_stats["tot"].item()
@@ -210,18 +213,25 @@ class Trainer(object):
             # batch = batch.to(device)
             torch.cuda.empty_cache()
             pre_img = batch['prev_image_rgb_input'].to(device) # bs x 3 x H x W
-            pre_hm = batch['prev_belief_maps_as_input_resolution'].to(device) # bs x 1 x H x W
+            pre_hm = batch['prev_belief_maps'].to(device) # bs x H x W
             pre_hm = pre_hm.unsqueeze(1)
+            repro_hm = batch["repro_belief_maps"].to(device)
+            repro_hm = repro_hm.unsqueeze(1)
             next_img = batch['next_image_rgb_input'].to(device)
 #            print('pre_img.size', pre_img.shape)
 #            print('pre_hm.size', pre_hm.shape)
 #            print('next_img.size', next_img.shape)
-            outputs = model(next_img, pre_img, pre_hm)
+            if phase == "PlanA":
+                outputs = model(next_img, pre_img, pre_hm, repro_hm)
+            elif phase == "Origin":
+                outputs = model(next_img, pre_img, repro_hm)
+            else:
+                raise ValueError 
 #            outputs = model(next_img)
             loss, loss_stats = self.loss(outputs, batch)
 #            print('loss', loss)
             
-            if phase == 'train':
+            if phase:
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
@@ -253,15 +263,17 @@ class Trainer(object):
                         output = outputs[0]
                         prev_rgb_net_inputs = dream.image_proc.images_from_tensor(batch["prev_image_rgb_input"]) # bs x 3 x H x W
                         next_rgb_net_inputs = dream.image_proc.images_from_tensor(batch["next_image_rgb_input"]) # bs x 3 x H x W
-                        next_gt_belief_maps_wholes = batch["prev_belief_maps_as_input_resolution"] # bs x H x W
+                        prev_belief_maps_wholes = batch["prev_belief_maps"] # bs x H x W
+                        repro_belief_maps_wholes = batch["repro_belief_maps"] # bs x H x W
                         next_belief_maps = output["hm"] # bs x num_kp x (H/R) x (W/R)
                         next_gt_belief_maps = batch["next_belief_maps"] # bs x num_kp x (H/R) x (W/R)
                         
-                        for idx, sample in enumerate(zip(prev_rgb_net_inputs,next_rgb_net_inputs, next_gt_belief_maps_wholes, next_belief_maps, next_gt_belief_maps)):
+                        for idx, sample in enumerate(zip(prev_rgb_net_inputs,next_rgb_net_inputs, prev_belief_maps_wholes, repro_belief_maps_wholes, next_belief_maps, next_gt_belief_maps)):
                             if idx < 4:
-                                prev_rgb_net_input_img, next_rgb_net_input_img, next_gt_belief_map_whole, next_belief_map, next_gt_belief_map = sample
+                                prev_rgb_net_input_img, next_rgb_net_input_img, prev_belief_map_whole, repro_belief_map_whole, next_belief_map, next_gt_belief_map = sample
                                 # prev_rgb_net_input与next_rgb_net_input都已经是Image了
-                                next_gt_belief_map_whole_img = dream.image_proc.image_from_belief_map(next_gt_belief_map_whole)
+                                prev_belief_map_whole_img = dream.image_proc.image_from_belief_map(prev_belief_map_whole)
+                                repro_belief_map_whole_img = dream.image_proc.image_from_belief_map(repro_belief_map_whole)
                                 
                                 next_belief_map_img = dream.image_proc.images_from_belief_maps(
                                 next_belief_map, normalization_method=6
@@ -278,7 +290,8 @@ class Trainer(object):
                                   
                                 writer.add_image(f'{idx} prev_rgb_net_input_img', np.array(prev_rgb_net_input_img), batch_idx + (epoch-1) * len(data_loader), dataformats='HWC')
                                 writer.add_image(f'{idx} next_rgb_net_input_img', np.array(next_rgb_net_input_img), batch_idx + (epoch-1) * len(data_loader), dataformats='HWC')
-                                writer.add_image(f'{idx} prev_gt_belief_map_whole_img', np.array(next_gt_belief_map_whole_img), batch_idx + (epoch-1) * len(data_loader), dataformats='HWC')
+                                writer.add_image(f'{idx} prev_belief_map_whole_img', np.array(prev_belief_map_whole_img), batch_idx + (epoch-1) * len(data_loader), dataformats='HWC')
+                                writer.add_image(f'{idx} repro_belief_map_whole_img', np.array(repro_belief_map_whole_img), batch_idx + (epoch-1) * len(data_loader), dataformats='HWC')
                                 writer.add_image(f'{idx} next_belief_maps_img', np.array(next_belief_maps_mosaic), batch_idx + (epoch-1) * len(data_loader), dataformats='HWC')
                                 writer.add_image(f'{idx} next_gt_belief_map_img', np.array(next_gt_belief_maps_mosaic), batch_idx + (epoch-1) * len(data_loader), dataformats='HWC')
                 

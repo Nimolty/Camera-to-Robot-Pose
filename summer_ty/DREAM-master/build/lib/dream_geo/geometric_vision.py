@@ -222,7 +222,7 @@ def get_pnp_keypoints(prev_kp_pos_gt, prev_kp_projs_gt, next_kp_pos_gt, camera_K
             prev_kp_projs_noised.append(ct)
             prev_kp_pos_gt_list.append(prev_kp_pos_gt[i].tolist())
 
-
+    prev_kp_projs_noised_np = np.array(prev_kp_projs_noised)
     # prev_kp_projs_noised = prev_kp_projs_gt + np.random.randn((n_kp, dimen)) * 0.1 * 2
     
     pnp_retval, prev_translation, prev_quaternion = solve_pnp(
@@ -247,10 +247,10 @@ def get_pnp_keypoints(prev_kp_pos_gt, prev_kp_projs_gt, next_kp_pos_gt, camera_K
         next_kp_projs_est[:, 0] /= next_kp_projs_est[:, 2]
         next_kp_projs_est[:, 1] /= next_kp_projs_est[:, 2]
         
-        return next_kp_projs_est[:, :2]
+        return True, next_kp_projs_est[:, :2], prev_kp_projs_noised_np
         
     else:
-        return None
+        return None, None, None
     
 def is_pnp(prev_kp_pos_gt, prev_kp_projs_gt, next_kp_pos_gt, camera_K):
     pnp_retval, prev_translation, prev_quaternion = solve_pnp(

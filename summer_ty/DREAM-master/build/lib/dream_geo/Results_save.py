@@ -11,7 +11,7 @@ from __future__ import print_function
 
 # import _init_paths
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '5'  
+os.environ['CUDA_VISIBLE_DEVICES'] = '6'  
 from enum import IntEnum
 
 import albumentations as albu
@@ -209,12 +209,12 @@ def save_inference(opt):
             )
         
         # validation
-        mean_valid_loss_per_batch, mean_valid_hm_loss_per_batch, mean_valid_reg_loss_per_batch = trainer.valid_epoch(val_loader, opt.device)
+        # mean_valid_loss_per_batch, mean_valid_hm_loss_per_batch, mean_valid_reg_loss_per_batch = trainer.valid_epoch(val_loader, opt.device)
         training_log = {}
-        training_log["validation"] = {}
-        training_log["validation"]["mean_valid_loss_all"] = mean_valid_loss_per_batch
-        training_log["validation"]["mean_valid_loss_hm"] = mean_valid_hm_loss_per_batch
-        training_log["validation"]["mean_valid_loss_reg"] = mean_valid_reg_loss_per_batch
+        # training_log["validation"] = {}
+        # training_log["validation"]["mean_valid_loss_all"] = mean_valid_loss_per_batch
+        # training_log["validation"]["mean_valid_loss_hm"] = mean_valid_hm_loss_per_batch
+        # training_log["validation"]["mean_valid_loss_reg"] = mean_valid_reg_loss_per_batch
         
         # inference in synthetic test set
         print('infer_dataset', opt.infer_dataset)

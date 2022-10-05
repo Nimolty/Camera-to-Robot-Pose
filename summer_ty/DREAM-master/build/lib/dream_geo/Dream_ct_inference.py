@@ -11,7 +11,7 @@ from __future__ import print_function
 # import tools._init_paths as _init_paths
 
 import os
-# os.environ['CUDA_VISIBLE_DEVICES'] = '4'
+os.environ['CUDA_VISIBLE_DEVICES'] = '7'
 import sys
 import cv2
 import json
@@ -72,7 +72,7 @@ def inference(opt):
 
     found_videos = find_dataset(opt)
     json_list, detected_kps_list = [], []
-    for found_video_0 in tqdm(found_videos[0:50]):
+    for found_video_0 in tqdm(found_videos[:50]):
         # found_video_0 = found_videos[j]
         # print('found_video_0', found_video_0) 
         # print('json_path', found_video_0[1])
@@ -194,8 +194,8 @@ def inference_real(opt, real_info_path):
 
 if __name__ == "__main__":
     opt = opts().init_infer(7, (480, 480))
-    # inference(opt)
-    inference_real(opt, real_info_path = "/root/autodl-tmp/dream_data/data/real/realsense_split_info.json")
+    inference(opt)
+    # inference_real(opt, real_info_path = "/root/autodl-tmp/dream_data/data/real/realsense_split_info.json")
     
 
 

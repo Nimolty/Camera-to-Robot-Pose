@@ -62,6 +62,7 @@ class DreamDetector(object):
         self.tracker = Tracker(opt)
         self.is_real = is_real
         self.is_ct = is_ct
+        self.phase = opt.phase
         # self.output_dir = output_dir.split('/')[-2]
         # self.output_dir = f"/mnt/data/Dream_ty/Dream_model/ct_infer_img/pics_0903/{self.output_dir}"
         
@@ -140,17 +141,17 @@ class DreamDetector(object):
 #                        self.tracker.tracks, meta, with_hm=not self.opt.zero_pre_hm)
 #                        continue
                     if i == 1:
-                        pre_hms, pre_inds = self._get_additional_inputs(
+                        pre_hms, repro_hms, pre_inds = self._get_additional_inputs(
                         self.tracker.tracks, meta, with_hm=not self.opt.zero_pre_hm)
                         #pre_hms, _ = self._get_initial_gt_inputs(json_path, meta)
                     else:
-                        _, pre_inds = self._get_additional_inputs(
+                        _, _, pre_inds = self._get_additional_inputs(
                         self.tracker.tracks, meta, with_hm=not self.opt.zero_pre_hm)
                         if self.is_real:
-                            pre_hms = self._get_further_dt_pnp_inputs_real(self.detected_kps, meta, self.pre_json_path, json_path)
+                            pre_hms, repro_hms = self._get_further_dt_pnp_inputs_real(self.detected_kps, meta, self.pre_json_path, json_path)
                             # pre_hms = self._get_further_dt_inputs(self.detected_kps, meta, with_hm=True, sigma=2)
                         else:
-                            pre_hms = self._get_further_dt_pnp_inputs(self.detected_kps, meta, self.pre_json_path, json_path)
+                            pre_hms, repro_hms = self._get_further_dt_pnp_inputs(self.detected_kps, meta, self.pre_json_path, json_path)
                             # pre_hms = self._get_further_dt_inputs(self.detected_kps, meta, with_hm=True, sigma=2)
 #                        pre_hms = self._get_further_dt_pnp_inputs_real(self.detected_kps, meta, self.pre_json_path, json_path)
 #                        pre_hms, _ = self._get_initial_gt_inputs(self.pre_json_path, meta)
@@ -197,7 +198,7 @@ class DreamDetector(object):
             # output: the output feature maps, only used for visualizing
             # dets: output tensors after extracting peaks
             output, dets, forward_time = self.process(
-              images, self.pre_images, pre_hms, pre_inds, return_time=True)
+              images, self.pre_images, pre_hms, repro_hms, pre_inds, return_time=True)
             net_time += forward_time - pre_process_time
             decode_time = time.time()
             dec_time += decode_time - forward_time
@@ -366,6 +367,7 @@ class DreamDetector(object):
       inp_width, inp_height = meta['inp_width'], meta['inp_height']
       out_width, out_height = meta['out_width'], meta['out_height']
       input_hm = np.zeros((1, inp_height, inp_width), dtype=np.float32) 
+      repro_hm = np.zeros((1, inp_height, inp_width), dtype=np.float32)
 
       output_inds = []
       for det in dets:
@@ -392,12 +394,14 @@ class DreamDetector(object):
           output_inds.append(ct_out[1] * out_width + ct_out[0])
       if with_hm:
           input_hm = input_hm[np.newaxis]
+          repro_hm = repro_hm[np.newaxis]
           if self.opt.flip_test:
             input_hm = np.concatenate((input_hm, input_hm[:, :, :, ::-1]), axis=0)
           input_hm = torch.from_numpy(input_hm).to(self.opt.device)
+          repro_hm = torch.from_numpy(repro_hm).to(self.opt.device)
       output_inds = np.array(output_inds, np.int64).reshape(1, -1)
       output_inds = torch.from_numpy(output_inds).to(self.opt.device)
-      return input_hm, output_inds
+      return input_hm, repro_hm, output_inds
 
     def _get_further_dt_pnp_inputs(self, kps_detected_raw_np, meta, prev_json, json):
         trans_input, trans_output = meta['trans_input'], meta['trans_output']
@@ -425,18 +429,21 @@ class DreamDetector(object):
         idx_good_detections_rows = np.unique(idx_good_detections[0])
         pre_x3d_list = prev_x3d_np[idx_good_detections_rows, :]
         kps_raw_list = kps_detected_raw_np[idx_good_detections_rows, :]
+        kps_raw_np = np.array(kps_raw_list)
             # next_x3d_list.append(next_x3d) 
         
         # print('kps_raw_list', kps_raw_list)
         if kps_raw_list == []:
-            return torch.zeros(1, 1, inp_height, inp_width).to(self.opt.device)
+            return torch.zeros(1, 1, inp_height, inp_width).to(self.opt.device), torch.zeros(1, 1, inp_height, inp_width).to(self.opt.device)
         
         
         next_kp_projs_est = dream.geometric_vision.is_pnp(np.array(pre_x3d_list), np.array(kps_raw_list), next_x3d_np, self.camera_K)
         
-        pre_hm = dream.utilities.get_prev_hm_wo_noise(next_kp_projs_est, trans_input,inp_width, inp_height)
+        pre_hm = dream.utilities.get_prev_hm_wo_noise(kps_raw_np, trans_input, inp_width, inp_height)
         pre_hm = torch.from_numpy(pre_hm).view(1, 1, inp_height, inp_width)
-        return pre_hm.to(self.opt.device)
+        repro_hm = dream.utilities.get_prev_hm_wo_noise(next_kp_projs_est, trans_input,inp_width, inp_height)
+        repro_hm = torch.from_numpy(repro_hm).view(1, 1, inp_height, inp_width)
+        return pre_hm.to(self.opt.device), repro_hm.to(self.opt.device)
     
     def _get_further_dt_pnp_inputs_real(self, kps_detected_raw_np, meta, prev_json, json):
         trans_input, trans_output = meta['trans_input'], meta['trans_output']
@@ -456,18 +463,21 @@ class DreamDetector(object):
         idx_good_detections_rows = np.unique(idx_good_detections[0])
         pre_x3d_list = prev_x3d_np[idx_good_detections_rows, :]
         kps_raw_list = kps_detected_raw_np[idx_good_detections_rows, :]
+        kps_raw_np = np.array(kps_raw_list)
             # next_x3d_list.append(next_x3d) 
          
         # print('kps_raw_list', kps_raw_list)
         if kps_raw_list == []:
-            return torch.zeros(1, 1, inp_height, inp_width).to(self.opt.device)
+            return torch.zeros(1, 1, inp_height, inp_width).to(self.opt.device), torch.zeros(1, 1, inp_height, inp_width).to(self.opt.device)
         
         
         next_kp_projs_est = dream.geometric_vision.is_pnp(np.array(pre_x3d_list), np.array(kps_raw_list), next_x3d_np, self.camera_K)
         
-        pre_hm = dream.utilities.get_prev_hm_wo_noise(next_kp_projs_est, trans_input,inp_width, inp_height)
+        pre_hm = dream.utilities.get_prev_hm_wo_noise(kps_raw_np, trans_input, inp_width, inp_height)
         pre_hm = torch.from_numpy(pre_hm).view(1, 1, inp_height, inp_width)
-        return pre_hm.to(self.opt.device)
+        repro_hm = dream.utilities.get_prev_hm_wo_noise(next_kp_projs_est, trans_input,inp_width, inp_height)
+        repro_hm = torch.from_numpy(repro_hm).view(1, 1, inp_height, inp_width)
+        return pre_hm.to(self.opt.device), repro_hm.to(self.opt.device)
         
 
     def _get_further_dt_inputs(self, kps_raw_np, meta, with_hm=True, sigma=2):
@@ -903,12 +913,15 @@ class DreamDetector(object):
 
         return output
       
-    def process(self, images, pre_images=None, pre_hms=None,
+    def process(self, images, pre_images=None, pre_hms=None, repro_hms=None,
       pre_inds=None, return_time=False):
       with torch.no_grad():
         torch.cuda.synchronize()
-        output = self.model(images, pre_images, pre_hms)[-1]
-        # output = self.model(images)
+        if self.phase == "Origin":
+            output = self.model(images, pre_images, repro_hms)[-1]
+        elif self.phase == "PlanA":
+            output = self.model(images, pre_images, pre_hms, repro_hms)[-1]
+        # output = self.model(images)[-1]
         if self.is_ct:
             output = self._sigmoid_output(output)
         output.update({'pre_inds': pre_inds})

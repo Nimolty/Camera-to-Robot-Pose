@@ -8,7 +8,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '6,7'
+os.environ['CUDA_VISIBLE_DEVICES'] = '7'
 # import _init_paths  
 from enum import IntEnum
 
@@ -267,29 +267,29 @@ def main(opt):
         )
     
     for epoch in tqdm(range(start_epoch + 1, opt.num_epochs + 1)):
-        trainer.train(epoch, train_loader, opt.device, writer, phase='train')
+        trainer.train(epoch, train_loader, opt.device, writer, phase=opt.phase)
         this_path = os.path.join(ckpt_path, "model_{}.pth".format(epoch))
         save_model(this_path, epoch, model, optimizer)
         
         
 #        # validation
-        mean_valid_loss_per_batch, mean_valid_hm_loss_per_batch, mean_valid_reg_loss_per_batch = trainer.valid_epoch(val_loader, opt.device)
+#        mean_valid_loss_per_batch, mean_valid_hm_loss_per_batch, mean_valid_reg_loss_per_batch = trainer.valid_epoch(val_loader, opt.device)
         training_log = {}
-        training_log["validation"] = {}
-        training_log["validation"]["mean_valid_loss_all"] = mean_valid_loss_per_batch
-        training_log["validation"]["mean_valid_loss_hm"] = mean_valid_hm_loss_per_batch
-        training_log["validation"]["mean_valid_loss_reg"] = mean_valid_reg_loss_per_batch
-        
+#        training_log["validation"] = {}
+#        training_log["validation"]["mean_valid_loss_all"] = mean_valid_loss_per_batch
+#        training_log["validation"]["mean_valid_loss_hm"] = mean_valid_hm_loss_per_batch
+#        training_log["validation"]["mean_valid_loss_reg"] = mean_valid_reg_loss_per_batch
+#        
         # inference in synthetic test set
-#        print('load_model', opt.load_model)
-#        opt.load_model = this_path
-#        print('load_model', opt.load_model)
-#        print('infer_dataset', opt.infer_dataset)
-#        opt.infer_dataset = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/testdata_randomtex/"
-#        print('infer_dataset', opt.infer_dataset)
-#        syn_test_info = inference(opt)
-#        kp_metrics, pnp_results = syn_test_info[0], syn_test_info[1]
-#        save_results(training_log, kp_metrics, pnp_results, mode="synthetic")
+        print('load_model', opt.load_model)
+        opt.load_model = this_path
+        print('load_model', opt.load_model)
+        print('infer_dataset', opt.infer_dataset)
+        opt.infer_dataset = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/synthetic_test/"
+        print('infer_dataset', opt.infer_dataset)
+        syn_test_info = inference(opt)
+        kp_metrics, pnp_results = syn_test_info[0], syn_test_info[1]
+        save_results(training_log, kp_metrics, pnp_results, mode="synthetic")
 #        
 #        # inference in pure test set
 #        print('infer_dataset', opt.infer_dataset)
@@ -299,20 +299,20 @@ def main(opt):
 #        kp_metrics_pure, pnp_results_pure = pure_test_info[0], pure_test_info[1]
 #        save_results(training_log, kp_metrics_pure, pnp_results_pure, mode="pure")
 #        
-#        # inference in real
+        # inference in real
 #        real_test_info = inference_real(opt, "/root/autodl-tmp/dream_data/data/real/realsense_split_info.json")
 #        kp_metrics_real, pnp_results_real = real_test_info[0], real_test_info[1]
 #        save_results(training_log, kp_metrics_real, pnp_results_real, mode="real")
         
         # save in json
-#        meta_path = os.path.join(results_path, "info_{}.json".format(epoch))
-#        if os.path.exists(meta_path):
-#            os.remove(meta_path)
-#        file_write_meta = open(meta_path, 'w')
-#        meta_json = [training_log]
-#        json_save = json.dumps(meta_json, indent=1)
-#        file_write_meta.write(json_save)
-#        file_write_meta.close()
+        meta_path = os.path.join(results_path, "info_{}.json".format(epoch))
+        if os.path.exists(meta_path):
+            os.remove(meta_path)
+        file_write_meta = open(meta_path, 'w')
+        meta_json = [training_log]
+        json_save = json.dumps(meta_json, indent=1)
+        file_write_meta.write(json_save)
+        file_write_meta.close()
         
         
                 
