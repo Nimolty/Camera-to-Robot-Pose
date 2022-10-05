@@ -13,11 +13,11 @@ class opts(object):
     self.parser.add_argument('task', default='',
                              help='ctdet | ddd | multi_pose '
                              '| tracking or combined with ,')
-    self.parser.add_argument('--dataset', default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_0909/",
+    self.parser.add_argument('--dataset', default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_1003/",
                              help='see lib/dataset/dataset_facotry for ' + 
                             'available datasets')
     self.parser.add_argument('--val_dataset', default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/valdata_randomtex/")
-    self.parser.add_argument("--infer_dataset", default = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/testdata_randomtex/")
+    self.parser.add_argument("--infer_dataset", default = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/testdata/")
     self.parser.add_argument('--root_dir', type=str, default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/")
     self.parser.add_argument('--test_dataset', default='',
                              help='coco | kitti | coco_hp | pascal')
@@ -119,6 +119,7 @@ class opts(object):
     self.parser.add_argument('--dataset_version', default='')
 
     # train
+    self.parser.add_argument('--phase', type=str, default="Origin")
     self.parser.add_argument('--dropout', type=float, default=0.1)
     self.parser.add_argument('--d_model', type=int, default=64)
     self.parser.add_argument('--levels', type=int, default=8)
@@ -133,7 +134,7 @@ class opts(object):
                              help='when to save the model to disk.')
     self.parser.add_argument('--num_epochs', type=int, default=70,
                              help='total training epochs.')
-    self.parser.add_argument('--batch_size', type=int, default=4,
+    self.parser.add_argument('--batch_size', type=int, default=16,
                              help='batch size')
     self.parser.add_argument('--master_batch_size', type=int, default=-1,
                              help='batch size on the master gpu.')

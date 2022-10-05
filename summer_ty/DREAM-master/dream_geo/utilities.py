@@ -394,8 +394,11 @@ def find_ndds_seq_data_in_dir(
         png_paths.sort()
         
         data_filenames = [f for f in dir_list if f.endswith(data_full_ext)]
+        if len(png_paths) != len(data_filenames):
+            print('path', output_dir)
         data_filenames.sort()
         data_filenames = data_filenames[:len(png_paths)] # 要保证两者长度一致且互相对应
+
         
         assert len(png_paths) == len(data_filenames)
         for png, filename in zip(png_paths, data_filenames):

@@ -14,7 +14,9 @@ import torch.nn.functional as F
 import torch.utils.model_zoo as model_zoo
 
 from .ca_model import BaseModelCA
-from .base_model import BaseModel
+from .base_model import BaseModel, BaseModelPlanA
+import dream_geo as dream
+import copy
 
 try:
     from .DCNv2.dcn_v2 import DCN
@@ -729,9 +731,6 @@ class DLASegCA(BaseModelCA):
         self.ida_up(img_pre, 0, len(img_pre))
         # 此时得到的y为[y1, y2, y3] 大小为bs x 64 x 120 x 120
         # size分别为 [bs, 16, 480, 480], [bs, 32, 240, 240], [bs, 64, 120, 120], [bs, 128, 60, 60], [bs, 256, 30, 30], [bs, 512, 15, 15]
-         
-
-        
         pre_h = self.hm_base(pre_hm = pre_hm)
         pre_h = self.hm_dla_up(pre_h)
         # pre_h = self.base(pre_hm=pre_hm)
@@ -752,8 +751,223 @@ class DLASegCA(BaseModelCA):
         fus_hm = torch.cat([fusion_features, hm_pre[-1]], dim=1) # 现在是Bx2CxHxW
         
         return [fus_hm, [x[0], x[1], x[2], x[5]], [pre_img[0], pre_img[1], pre_img[2], pre_img[5]]]
+
+class TransformerEncoderLayer(nn.Module):
+    def __init__(self, d_inp, d_model, d_ffn=1024,
+                 dropout=0.1,
+                 n_heads=8):
+        # d_out = d_model * n_heads
+        super().__init__()
+        self.d_model = d_model
+        self.d_inp = d_inp
+        self.d_ffn = d_ffn
+        self.dropout = dropout
+        self.n_heads = n_heads
+        self.d_out = self.d_model * self.n_heads
         
+        # cross attention
+        self.cross_attn = MHCA(self.n_heads, self.d_inp, self.d_out)
+        self.dropout1 = nn.Dropout(self.dropout)
+        self.norm1 = nn.LayerNorm(self.d_inp)
         
+        # ffn
+        self.linear1 = nn.Linear(self.d_inp, self.d_ffn)
+        self.activation = nn.ReLU()
+        self.dropout3 = nn.Dropout(self.dropout)
+        self.linear2 = nn.Linear(self.d_ffn, self.d_inp)
+        self.dropout4 = nn.Dropout(self.dropout)
+        self.norm3 = nn.LayerNorm(self.d_inp)
+    
+    def forward_ffn(self, tgt):
+        tgt2 = self.linear2(self.dropout3(self.activation(self.linear1(tgt))))
+        tgt = tgt + self.dropout4(tgt2)
+        tgt = self.norm3(tgt)
+        return tgt
+    
+    def forward(self, query, key, value):
+        # cross-attention
+        tgt = self.cross_attn(query, key, value)
+        query = tgt + self.dropout1(query)
+        query = self.norm1(query)
+        
+        # ffn
+        query = self.forward_ffn(query)
+        
+        return query
+
+def _get_clones(module, N):
+    return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
+
+class TransformerEncoder(nn.Module):
+    def __init__(self, decoder_layer, num_layers):
+        super().__init__()
+        self.layers = _get_clones(decoder_layer, \
+                                  num_layers)
+        self.num_layers = num_layers
+        
+    def forward(self, query, key, value):
+        output = query
+        for layer in self.layers:
+            output = layer(output, key, value)
+        
+        return output
+    
+class MHCA(nn.Module):
+    def __init__(self, num_heads, inp_dim, hid_dim):
+        super().__init__()
+        self.hid_dim = hid_dim
+        # self.v_dim = v_dim
+        self.inp_dim = inp_dim
+        self.n_heads = num_heads
+        
+        assert self.hid_dim % self.n_heads == 0
+        
+        self.w_q = nn.Linear(self.inp_dim, self.hid_dim, bias=False)
+        self.w_k = nn.Linear(self.inp_dim, self.hid_dim, bias=False)
+        self.w_v = nn.Linear(self.inp_dim, self.hid_dim, bias=False)
+        
+        self.fc = nn.Linear(self.hid_dim, self.inp_dim)
+        self.scale = math.sqrt(self.hid_dim // self.n_heads)
+    
+    def forward(self, query, key, value, pos_embed=None):
+        batch_size, N, C = query.shape # N为1个batch中query的个数，C表示特征通道数
+        Q = self.w_q(query)
+        K = self.w_k(key)
+        V = self.w_v(value)
+        
+        Q = Q.view(batch_size, N, self.n_heads, self.hid_dim // self.n_heads).permute(0, 2, 1, 3)
+        K = K.view(batch_size, N, self.n_heads, self.hid_dim // self.n_heads).permute(0, 2, 1, 3)
+        V = V.view(batch_size, N, self.n_heads, self.hid_dim // self.n_heads).permute(0, 2, 1, 3)
+        
+        if pos_embed:
+            # 此时pos_embed应该为一个bs x N x 2的矩阵
+            self.w_pos = nn.Linear(2, self.hid_dim)
+            self.pos_embed = self.w_pos(pos_embed)
+            self.pos_embed = self.pos_embed.view(batch_size, N, self.n_heads, self.him_dim // self.n_heads).permute(0, 2, 1, 3)
+            Q = Q + self.pos_embed
+            K = K + self.pos_embed
+        
+        energy = torch.matmul(Q, K.permute(0, 1, 3, 2)) / self.scale
+        attention = torch.softmax(energy, dim=-1)
+        x = torch.matmul(attention, V)
+        x = x.permute(0, 2, 1, 3).contiguous()
+        x = x.view(batch_size, N, -1)
+        x = self.fc(x)
+        return x
+        
+def get_topk_pairs(pre_hm, repro_hm, K):
+    B_hm, C_hm, H_hm, W_hm = pre_hm.shape # C_hm实际为1
+    assert pre_hm.shape == repro_hm.shape
+    pre_topk = torch.topk(pre_hm.view(B_hm,C_hm,-1), K, dim=-1)[1].float()
+    pre_topk /= (H_hm * W_hm) # 得到小数，是比例的， 得到B_hm x C_hm(实则为1) x K
+    repro_topk = torch.topk(repro_hm.view(B_hm, C_hm, -1), K, dim=-1)[1].float()
+    repro_topk /= (H_hm * W_hm)
+    return pre_topk.view(B_hm, -1), repro_topk.view(B_hm, -1) # B_hm x K
+
+def get_topk_features(pre_features, cur_features, pre_topk, repro_topk):
+    B, C, H, W = pre_features.shape
+    assert pre_features.shape == cur_features.shape
+    pre_topk_int = (pre_topk * H * W).type(torch.long) # size = B x K
+    repro_topk_int = (repro_topk * H * W).type(torch.long)
+    assert pre_topk.shape == repro_topk.shape
+    _, length = pre_topk.shape
+    topk_ind1 = torch.arange(B).view(B, 1).repeat(1, length) # size = B x K
+    
+    pre_f = pre_features.permute(0, 2, 3, 1).contiguous()
+    B_q, _, _, C_q = pre_f.shape
+    pre_key = pre_f.view(B_q, -1, C_q)[[topk_ind1, pre_topk_int]] # size = B x K x C
+    cur_f = cur_features.permute(0, 2, 3, 1).contiguous()
+    cur_query = cur_f.view(B_q, -1, C_q)[[topk_ind1, repro_topk_int]]
+    
+    return pre_key, cur_query
+
+def substitute_topk_features(out, cur_features, repro_topk, mlp):
+    # out.shape : B x K x C
+    B, C, H, W = cur_features.shape
+    repro_topk_int = (repro_topk * H * W).type(torch.long)
+    _, length = repro_topk_int.shape
+    topk_ind1 = torch.arange(B).view(B, 1).repeat(1, length)
+    
+    cur_f = cur_features.permute(0, 2, 3, 1).contiguous()
+    B_q, H_q, W_q, C_q = cur_f.shape
+    cur_f = cur_f.view(B_q, -1, C_q)
+    cur_query = cur_f[[topk_ind1, repro_topk_int]] # B x K x C
+    cur_out = torch.cat([out, cur_query], dim=-1)
+    cur_f[[topk_ind1, repro_topk_int]] = mlp(cur_out)
+    cur_f = cur_f.view(B_q, H_q, W_q, C_q)
+    cur_f = cur_f.permute(0, 3, 1, 2).contiguous()
+    
+    return cur_f
+    
+    
+
+
+
+class DLA_PlanA(BaseModelPlanA):
+    def __init__(self, num_layers, heads, head_convs, opt, K=28):
+        super(DLA_PlanA, self).__init__(
+            heads, head_convs, 1, 64 if num_layers == 34 else 128, opt=opt)
+        down_ratio=4
+        print("################## Plan A Start! ######################")
+        self.opt = opt
+        self.node_type = DLA_NODE[opt.dla_node]
+        # print('Using node type:', self.node_type)
+        # print('this one')
+        self.first_level = int(np.log2(down_ratio))
+        self.last_level = 5
+        self.base = globals()['dla{}'.format(num_layers)](
+            pretrained=(opt.load_model == ''), opt=opt)
+        
+        # print(self.base)
+        channels = self.base.channels
+        scales = [2 ** i for i in range(len(channels[self.first_level:]))]
+        self.dla_up = DLAUp(
+            self.first_level, channels[self.first_level:], scales,
+            node_type=self.node_type)
+        out_channel = channels[self.first_level]
+
+        self.ida_up = IDAUp(
+            out_channel, channels[self.first_level:self.last_level], 
+            [2 ** i for i in range(self.last_level - self.first_level)],
+            node_type=self.node_type)
+        
+        self.transformer = nn.ModuleList(
+            [copy.deepcopy(TransformerEncoder(
+                TransformerEncoderLayer(d_inp=16*(2**i), d_model=4*(2**i)), num_layers=3)
+                ) for i in range(6)])
+        self.cat_layer = nn.ModuleList(
+            [nn.Sequential(nn.Linear(16*(2**(i+1)), 32*(2**(i+1))),
+                           nn.ReLU(),
+                           nn.Linear(32*(2**(i+1)), 16*(2**(i)))) for i in range(6)]
+                                      )
+        self.K = K
+
+    def imgpre2feats(self, x, pre_img=None, pre_hm=None, repro_hm=None):
+        # 我决定在datasets中构建函数使得pre_hm转换为repro_hm，所以这里直接Input了
+        x_pre = self.base(pre_img=pre_img, pre_hm=pre_hm) # 得到一个6元素的list
+        x_cur = self.base(pre_img=x, pre_hm = repro_hm) #得到一个6元素的list
+        
+        # print("################## Plan A Start! ######################")
+        x_out = []
+        assert len(x_pre) == len(x_cur)
+        pre_topk_indices, repro_topk_indices = get_topk_pairs(pre_hm, repro_hm, self.K)
+        for i in range(len(x_cur)):
+            pre_features, cur_features = x_pre[i], x_cur[i]
+            transformer = self.transformer[i]
+            pre_key, cur_query = get_topk_features(pre_features, cur_features, pre_topk_indices, repro_topk_indices)
+            out = transformer(cur_query, pre_key, pre_key)
+            out = substitute_topk_features(out, cur_features, repro_topk_indices, self.cat_layer[i])
+            # print(out.shape)
+            assert out.shape == x_pre[i].shape
+            x_out.append(out)
+          
+        x_out = self.dla_up(x_out)
+        y = []
+        for i in range(self.last_level - self.first_level):
+            y.append(x_out[i].clone())
+        self.ida_up(y, 0, len(y))
+
+        return [y[-1]]
         
         
         
