@@ -169,12 +169,13 @@ class Trainer(object):
                 if isinstance(v, torch.Tensor):
                     state[k] = v.to(device=device, non_blocking=True)
     
-    def valid_epoch(self, data_loader, device):
+    def valid_epoch(self, data_loader, device, phase):
         model = self.model
         if len(self.opt.gpus) > 1:
             model = self.model.module
         opt = self.opt
         with torch.no_grad():
+            model.eval()
             valid_batch_losses = []
             valid_batch_hm_losses = []
             valid_batch_reg_losses = []
@@ -186,7 +187,15 @@ class Trainer(object):
                 repro_hm = batch["repro_belief_maps"].to(device)
                 repro_hm = repro_hm.unsqueeze(1)
                 next_img = batch['next_image_rgb_input'].to(device)
-                outputs = model(next_img, pre_img, pre_hm, repro_hm)
+                if phase == "PlanA":
+                    outputs = model(next_img, pre_img, pre_hm, repro_hm)
+                elif phase == "Origin":
+                    outputs = model(next_img, pre_img, repro_hm)
+                elif phase == "Origin_worepro":
+                    outputs = model(next_img, pre_img, pre_hm)
+                else:
+                    raise ValueError
+                # outputs = model(next_img, pre_img, pre_hm, repro_hm)
                 loss, loss_stats = self.loss(outputs, batch)
                 
                 loss_all_this_batch = loss_stats["tot"].item()
@@ -205,6 +214,7 @@ class Trainer(object):
     
     def run_epoch(self, phase, epoch, data_loader, device, writer):
         model = self.model
+        model.train()
 #        if len(self.opt.gpus) > 1:
 #            model = self.model.module
 #            print('model', model.device)
@@ -225,6 +235,8 @@ class Trainer(object):
                 outputs = model(next_img, pre_img, pre_hm, repro_hm)
             elif phase == "Origin":
                 outputs = model(next_img, pre_img, repro_hm)
+            elif phase == "Origin_worepro":
+                outputs = model(next_img, pre_img, pre_hm)
             else:
                 raise ValueError 
 #            outputs = model(next_img)

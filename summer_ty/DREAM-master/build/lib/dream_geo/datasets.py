@@ -816,47 +816,47 @@ class CenterTrackSeqDataset(TorchDataset):
 
         return sample
 
-if __name__ == "__main__":
-    from PIL import Image
-
-    # beliefs = CreateBeliefMap((100,100),[(50,50),(-1,-1),(0,50),(50,0),(10,10)])
-    # for i,b in enumerate(beliefs):
-    #     print(b.shape)
-    #     stack = np.stack([b,b,b],axis=0).transpose(2,1,0)
-    #     im = Image.fromarray((stack*255).astype('uint8'))
-    #     im.save('{}.png'.format(i))
-
-    path = "/home/sbirchfield/data/FrankaSimpleHomeDR20k/"
-    # path = '/home/sbirchfield/data/FrankaSimpleMPGammaDR105k/'
-
-    keypoint_names = [
-        "panda_link0",
-        "panda_link2",
-        "panda_link3",
-        "panda_link4",
-        "panda_link6",
-        "panda_link7",
-        "panda_hand",
-    ]
-
-    found_data = dream.utilities.find_ndds_data_in_dir(path)
-    train_dataset = ManipulatorNDDSDataset(
-        found_data,
-        "panda",
-        keypoint_names,
-        (400, 400),
-        (100, 100),
-        include_belief_maps=True,
-        augment_data=True,
-    )
-    trainingdata = torch.utils.data.DataLoader(
-        train_dataset, batch_size=32, shuffle=False, num_workers=1, pin_memory=True
-    )
-
-    targets = iter(trainingdata).next()
-
-    for i, b in enumerate(targets["belief_maps"][0]):
-        # print(b.shape)
-        stack = np.stack([b, b, b], axis=0).transpose(2, 1, 0)
-        im = Image.fromarray((stack * 255).astype("uint8"))
-        im.save("{}.png".format(i))
+#if __name__ == "__main__":
+#    from PIL import Image
+#
+#    # beliefs = CreateBeliefMap((100,100),[(50,50),(-1,-1),(0,50),(50,0),(10,10)])
+#    # for i,b in enumerate(beliefs):
+#    #     print(b.shape)
+#    #     stack = np.stack([b,b,b],axis=0).transpose(2,1,0)
+#    #     im = Image.fromarray((stack*255).astype('uint8'))
+#    #     im.save('{}.png'.format(i))
+#
+#    path = "/home/sbirchfield/data/FrankaSimpleHomeDR20k/"
+#    # path = '/home/sbirchfield/data/FrankaSimpleMPGammaDR105k/'
+#
+#    keypoint_names = [
+#        "panda_link0",
+#        "panda_link2",
+#        "panda_link3",
+#        "panda_link4",
+#        "panda_link6",
+#        "panda_link7",
+#        "panda_hand",
+#    ]
+#
+#    found_data = dream.utilities.find_ndds_data_in_dir(path)
+#    train_dataset = ManipulatorNDDSDataset(
+#        found_data,
+#        "panda",
+#        keypoint_names,
+#        (400, 400),
+#        (100, 100),
+#        include_belief_maps=True,
+#        augment_data=True,
+#    )
+#    trainingdata = torch.utils.data.DataLoader(
+#        train_dataset, batch_size=32, shuffle=False, num_workers=1, pin_memory=True
+#    )
+#
+#    targets = iter(trainingdata).next()
+#
+#    for i, b in enumerate(targets["belief_maps"][0]):
+#        # print(b.shape)
+#        stack = np.stack([b, b, b], axis=0).transpose(2, 1, 0)
+#        im = Image.fromarray((stack * 255).astype("uint8"))
+#        im.save("{}.png".format(i))

@@ -33,7 +33,7 @@ from .dataset.dataset_factory import get_dataset
 import dream_geo as dream
 
 class DreamDetector(object):
-    def __init__(self, opt, output_dir, keypoint_names, is_real, is_ct):
+    def __init__(self, opt,keypoint_names, is_real, is_ct):
         if opt.gpus[0] >= 0:
             opt.device = torch.device("cuda")
         else:
@@ -67,8 +67,8 @@ class DreamDetector(object):
         # self.output_dir = f"/mnt/data/Dream_ty/Dream_model/ct_infer_img/pics_0903/{self.output_dir}"
         
         # self.output_dir = output_dir.split('/')[-1][:6]
-        self.output_dir = f"/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/ct_infer_img/real/{output_dir}"
-        self.exists_or_mkdir(self.output_dir)
+        # self.output_dir = f"/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/ct_infer_img/real/{output_dir}"
+        # self.exists_or_mkdir(self.output_dir)
         self.keypoint_names = keypoint_names
         if self.is_real:
             self.camera_K = np.array([[615.52392578125, 0, 328.2606506347656], [0.0, 615.2191772460938, 251.7917022705078], [0, 0, 1.0]])
@@ -921,6 +921,10 @@ class DreamDetector(object):
             output = self.model(images, pre_images, repro_hms)[-1]
         elif self.phase == "PlanA":
             output = self.model(images, pre_images, pre_hms, repro_hms)[-1]
+        elif self.phase == "Origin_worepro":
+            output = self.model(images, pre_images, pre_hms)[-1]
+        else:
+            raise ValueError
         # output = self.model(images)[-1]
         if self.is_ct:
             output = self._sigmoid_output(output)

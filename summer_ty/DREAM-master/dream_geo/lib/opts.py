@@ -17,7 +17,7 @@ class opts(object):
                              help='see lib/dataset/dataset_facotry for ' + 
                             'available datasets')
     self.parser.add_argument('--val_dataset', default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/valdata_randomtex/")
-    self.parser.add_argument("--infer_dataset", default = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/testdata/")
+    self.parser.add_argument("--infer_dataset", default = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/synthetic_test_1005/")
     self.parser.add_argument('--root_dir', type=str, default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/")
     self.parser.add_argument('--test_dataset', default='',
                              help='coco | kitti | coco_hp | pascal')

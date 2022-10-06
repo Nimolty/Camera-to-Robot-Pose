@@ -84,15 +84,19 @@ python Dream_main.py tracking --exp_id 11  --pre_hm --same_aug --hm_disturb 0.05
 #python Dream_main.py tracking --exp_id 24  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1,3 --arch dlaca_34 --resume --model_last_pth model_1.pth
 
 # planA !!!
-python Dream_main.py tracking --exp_id 25  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --arch dlapa_34
+#python Dream_main.py tracking --exp_id 25  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --arch dlapa_34
 
 # 在franka_data_1003上跑，时序，使用dla backbone，仿射变换的aug，使用repro hm
-python Dream_main.py tracking --exp_id 26  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --phase Origin
-
-python Dream_main.py tracking --exp_id 27  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --phase Origin
+python Dream_main.py tracking --exp_id 26  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --phase Origin --resume --model_last_pth model_20.pth
 
 # 在franka_data_1003上跑，时序,仿射变换的aug, Plan A
 python Dream_main.py tracking --exp_id 25  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlapa_34 --phase PlanA
+
+# 在franka_data_1003上跑，时序，训练时仿射变换的aug, origin, 但使用pre_hm而不是repro_hm, 使用dla的backbone
+python Dream_main.py tracking --exp_id 27  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --phase Origin_worepro
+
+
+#python Dream_main.py tracking --exp_id 25  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlapa_34 --phase PlanA --resume --model_last_pth model_11.pth
 
 #python Results_save.py tracking --exp_id 19 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1
 #
@@ -102,12 +106,16 @@ python Dream_main.py tracking --exp_id 25  --pre_hm --same_aug --hm_disturb 0.75
 
 # python Results_save.py tracking --exp_id 21 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --arch dlaca_34
 
+python Results_save.py tracking --exp_id 25 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --arch dlapa_34 --phase PlanA
+
+python Results_save.py tracking --exp_id 26 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --phase Origin
+
 
 
 
 python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/26/ckpt/model_1.pth --phase Origin --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4
-
-python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/25/ckpt/model_1.pth --phase PlanA --arch dlapa_34 --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4
+#
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/25/ckpt/model_10.pth --phase PlanA --arch dlapa_34 --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4
 #
 #
 #python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/21/ckpt/model_20.pth --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4

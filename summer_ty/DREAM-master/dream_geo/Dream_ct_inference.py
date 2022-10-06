@@ -11,7 +11,7 @@ from __future__ import print_function
 # import tools._init_paths as _init_paths
 
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '7'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import sys
 import cv2
 import json
@@ -69,15 +69,15 @@ def inference(opt):
     "Link7",
     "Panda_hand",
     ]
-
-    found_videos = find_dataset(opt)
-    json_list, detected_kps_list = [], []
-    for found_video_0 in tqdm(found_videos[:50]):
+    
+    with torch.no_grad():
+        detector = DreamDetector(opt, keypoint_names, is_real=False, is_ct=True)
+        found_videos = find_dataset(opt)
+        json_list, detected_kps_list = [], []
+        for found_video_0 in tqdm(found_videos[:50]):
         # found_video_0 = found_videos[j]
         # print('found_video_0', found_video_0) 
         # print('json_path', found_video_0[1])
-        with torch.no_grad():
-            detector = DreamDetector(opt, found_video_0[1][-1], keypoint_names, is_real=False, is_ct=True)
             length = len(found_video_0[0])
             # print(length)
             for i, img_path in enumerate(found_video_0[0]):
@@ -129,9 +129,8 @@ def inference(opt):
     output_dir,
     is_real=False)
     return analysis_info
-    
-                # print('ret', ret)
- 
+
+
 
 def inference_real(opt, real_info_path):
     real_keypoint_names = ["panda_link0", "panda_link2", "panda_link3", "panda_link4", "panda_link6", "panda_link7", "panda_hand"]
@@ -143,9 +142,9 @@ def inference_real(opt, real_info_path):
     json_list, detected_kps_list = [], []
     
     with torch.no_grad():
+        detector = DreamDetector(opt,real_keypoint_names, is_real=True, is_ct=True)
         for idx, (video_images, video_jsons) in tqdm(enumerate((zip(real_images, real_jsons)))):
             if idx >= 0 : 
-                detector = DreamDetector(opt, idx, real_keypoint_names, is_real=True, is_ct=True)
                 assert len(video_images) == len(video_jsons)
                 length = len(video_images)
                 

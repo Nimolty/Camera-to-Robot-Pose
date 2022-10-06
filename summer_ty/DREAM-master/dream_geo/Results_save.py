@@ -11,7 +11,7 @@ from __future__ import print_function
 
 # import _init_paths
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '6'  
+os.environ['CUDA_VISIBLE_DEVICES'] = '5'  
 from enum import IntEnum
 
 import albumentations as albu
@@ -218,7 +218,7 @@ def save_inference(opt):
         
         # inference in synthetic test set
         print('infer_dataset', opt.infer_dataset)
-        opt.infer_dataset = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/testdata_randomtex/"
+        opt.infer_dataset = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/synthetic_test_1005/"
         print('infer_dataset', opt.infer_dataset)
         syn_test_info = inference(opt)
         kp_metrics, pnp_results = syn_test_info[0], syn_test_info[1]
@@ -227,7 +227,7 @@ def save_inference(opt):
         
         # inference in pure test set
         print('infer_dataset', opt.infer_dataset)
-        opt.infer_dataset = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/testdata/"
+        opt.infer_dataset = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/pure_test/"
         print('infer_dataset', opt.infer_dataset)
         pure_test_info = inference(opt)
         kp_metrics_pure, pnp_results_pure = pure_test_info[0], pure_test_info[1]
