@@ -11,7 +11,8 @@ from __future__ import print_function
 # import tools._init_paths as _init_paths
 
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '2,3'
+os.environ["CUDA_VISIBLE_DEVICES"] = "5"
 import sys
 import cv2
 import json
@@ -71,7 +72,6 @@ def inference(opt):
     ]
     
     with torch.no_grad():
-        detector = DreamDetector(opt, keypoint_names, is_real=False, is_ct=True)
         found_videos = find_dataset(opt)
         json_list, detected_kps_list = [], []
         for found_video_0 in tqdm(found_videos[:50]):
@@ -80,33 +80,27 @@ def inference(opt):
         # print('json_path', found_video_0[1])
             length = len(found_video_0[0])
             # print(length)
+            detector = DreamDetector(opt, keypoint_names, is_real=False, is_ct=True)
             for i, img_path in enumerate(found_video_0[0]):
                 if i == 0:
                     continue
                 json_path = found_video_0[1][i]
-#                img = cv2.imread(img_path)
-                img = PILImage.open(img_path).convert("RGB")
-                img_shrink_and_crop = dream.image_proc.preprocess_image(
-                img, (opt.input_w, opt.input_h), "shrink-and-crop"
-                )
-#                 print('size', img_shrink_and_crop.size)
-#                 print('res', dream.image_proc.convert_keypoints_to_raw_from_netin(
-#                    [[-999.999*4,-999.999 *4]],
+                img = cv2.imread(img_path)
+#                img = PILImage.open(img_path).convert("RGB")
+#                img_shrink_and_crop = dream.image_proc.preprocess_image(
+#                img, (opt.input_w, opt.input_h), "shrink-and-crop"
+#                )
+#                img_shrink_and_crop = np.asarray(img_shrink_and_crop)
+                # print('img.size', img.shape)
+                
+#                ret, detected_kps_netin = detector.run(img, i, json_path, is_final=True)
+#                detected_kps_np = dream.image_proc.convert_keypoints_to_raw_from_netin(
+#                    detected_kps_netin,
 #                    (opt.input_w, opt.input_h),
 #                    (640, 360),
-#                    "shrink-and-crop",
-#                )) 
-                img_shrink_and_crop = np.asarray(img_shrink_and_crop)
-                
-                ret, detected_kps_netin = detector.run(img_shrink_and_crop, i, json_path, is_final=True)
-                detected_kps_np = dream.image_proc.convert_keypoints_to_raw_from_netin(
-                    detected_kps_netin,
-                    (opt.input_w, opt.input_h),
-                    (640, 360),
-                    "shrink-and-crop", 
-                )
-                # print('detected_ks_np', detected_kps_np)
-                
+#                    "shrink-and-crop", 
+#                )
+                ret, detected_kps_np = detector.run(img, i, json_path, is_final=True)            
                 output_dir = img_path.rstrip('png')
                 np.savetxt(output_dir + 'txt', detected_kps_np)
                 json_list.append(json_path)
@@ -132,7 +126,9 @@ def inference(opt):
 
 
 
-def inference_real(opt, real_info_path):
+def inference_real(opt):
+    real_info_path = "/root/autodl-tmp/dream_data/data/real/dream_real_info/"
+    real_info_path = os.path.join(real_info_path, opt.is_real + "_split_info.json")
     real_keypoint_names = ["panda_link0", "panda_link2", "panda_link3", "panda_link4", "panda_link6", "panda_link7", "panda_hand"]
     parser = YAML(typ="safe")
     with open(real_info_path, "r") as f:
@@ -142,29 +138,34 @@ def inference_real(opt, real_info_path):
     json_list, detected_kps_list = [], []
     
     with torch.no_grad():
-        detector = DreamDetector(opt,real_keypoint_names, is_real=True, is_ct=True)
         for idx, (video_images, video_jsons) in tqdm(enumerate((zip(real_images, real_jsons)))):
             if idx >= 0 : 
+                detector = DreamDetector(opt,real_keypoint_names, is_real=opt.is_real, is_ct=True)
                 assert len(video_images) == len(video_jsons)
                 length = len(video_images)
                 
                 for j, (img_path, json_path) in enumerate(zip(video_images, video_jsons)):
                     if j == 0:
-                        continue
-                        
-                    img = PILImage.open(img_path).convert("RGB")
-                    # print('size', img.size)
-                    img_shrink_and_crop = dream.image_proc.preprocess_image(
-                    img, (opt.input_w, opt.input_h), "shrink-and-crop"
-                    )
-                    img_shrink_and_crop = np.asarray(img_shrink_and_crop)
-                    ret, detected_kps_netin = detector.run(img_shrink_and_crop, j, json_path, is_final=True)
-                    detected_kps_np = dream.image_proc.convert_keypoints_to_raw_from_netin(
-                        detected_kps_netin,
-                        (opt.input_w, opt.input_h),
-                        img.size,
-                        "shrink-and-crop", 
-                    )
+                        continue 
+                    
+                    img = cv2.imread(img_path)
+                    # print('img.shape', img.shape)
+#                    img = PILImage.open(img_path).convert("RGB")
+#                    print("#################### SIZE ####################")
+#                    print('size', img.size)
+#                    print("#################### SIZE ####################")
+#                    img_shrink_and_crop = dream.image_proc.preprocess_image(
+#                    img, (opt.input_w, opt.input_h), "shrink-and-crop"
+#                    )
+#                    img_shrink_and_crop = np.asarray(img_shrink_and_crop)
+
+                    ret, detected_kps_np = detector.run(img, j, json_path, is_final=True)
+#                    detected_kps_np = dream.image_proc.convert_keypoints_to_raw_from_netin(
+#                        detected_kps_netin,
+#                        (opt.input_w, opt.input_h),
+#                        img.size,
+#                        "shrink-and-crop", 
+#                    )
                     # output_dir = img_path.rstrip('png')
                     # np.savetxt(output_dir + 'txt', detected_kps_np)
                     json_list.append(json_path)
@@ -182,9 +183,9 @@ def inference_real(opt, real_info_path):
         detected_kps_list,
         opt, 
         real_keypoint_names,
-        img.size,
+        [640, 480],
         output_dir,
-        is_real=True)
+        is_real=opt.is_real)
         return analysis_info
                 
                 
@@ -193,8 +194,8 @@ def inference_real(opt, real_info_path):
 
 if __name__ == "__main__":
     opt = opts().init_infer(7, (480, 480))
-    inference(opt)
-    # inference_real(opt, real_info_path = "/root/autodl-tmp/dream_data/data/real/realsense_split_info.json")
+    # inference(opt)
+    inference_real(opt)
     
 
 

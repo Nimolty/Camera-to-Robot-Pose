@@ -434,7 +434,7 @@ def find_ndds_seq_data_in_dir(
         found_data = found_data + found_data_this_video
         # print('each dir', each_dir)
         # print(found_data_this_video)
-    
+    # print(found_data)
     return found_data # 这里我就单独搞一个camera_config吧，不搞别的了
 
 def load_camera_intrinsics(camera_data_path):
@@ -759,7 +759,7 @@ def affine_transform_and_clip(pts, t, width, height):
     return new_pts
 
 
-def get_prev_hm(kp_projs_raw, trans_input,input_w, input_h, hm_disturb = 0.05, lost_disturb=0.1, fp_disturb=0.1):
+def get_prev_hm(kp_projs_raw, trans_input,input_w, input_h, hm_disturb = 0.05, lost_disturb=0.1):
     hm_w, hm_h = input_w, input_h
     kp_projs_net_output = affine_transform_and_clip(kp_projs_raw, trans_input, input_w, input_h) # 得到一个kp x 2的矩阵
     pre_hm = np.zeros((hm_h, hm_w), dtype=np.float32)

@@ -1002,136 +1002,136 @@ class DreamHourglass(nn.Module):
         return outputs
 
 
-if __name__ == "__main__":
-    import torch
-
-    # Unit test parameters
-    n_keypoints = 7
-    batch_size = 2
-
-    # Unit testing network construction and forward
-    print("DreamHourglassMultiStage: upsample decoder")
-    for n in range(1, 7):
-        print("{}-stage".format(n))
-        net = DreamHourglassMultiStage(
-            n_keypoints,
-            n_stages=n,
-            internalize_spatial_softmax=False,
-            deconv_decoder=False,
-            full_output=True,
-        ).cuda()
-        y = net(torch.zeros(batch_size, 3, 400, 400).cuda())
-        print(y[-1].shape)
-        print()
-        del net, y
-        torch.cuda.empty_cache()
-
-    raise ()
-
-    net_input_height = 400  # 480
-    net_input_width = 400  # 640
-
-    net_input = torch.zeros(batch_size, 3, net_input_height, net_input_width)
-    print("net_input shape: {}".format(net_input.shape))
-
-    print("ResnetSimple")
-    net = ResnetSimple(n_keypoints).cuda()
-    y = net(net_input.cuda())
-    print(y[-1].shape)
-    print()
-    del net, y
-
-    print("ResnetSimpleFull")
-    net = ResnetSimple(n_keypoints, full=True).cuda()
-    y = net(net_input.cuda())
-    print(y[-1].shape)
-    print()
-    del net, y
-
-    print("DOPE")
-    net = DopeNetworkBelief().cuda()
-    y = net(net_input.cuda())
-    print(y[-1].shape)
-    print()
-    del net, y
-
-    torch.cuda.empty_cache()
-
-    # Testing DreamHourglass variations
-    print("DreamHourglass")
-    net1 = DreamHourglass(
-        n_keypoints,
-        internalize_spatial_softmax=False,
-        skip_connections=False,
-        deconv_decoder=False,
-    ).cuda()
-    y = net1(net_input.cuda())
-    print(y[-1].shape)
-    print()
-    del net1, y
-
-    net3 = DreamHourglass(
-        n_keypoints,
-        internalize_spatial_softmax=False,
-        skip_connections=False,
-        deconv_decoder=True,
-    ).cuda()
-    y = net3(net_input.cuda())
-    print(y[-1].shape)
-    print()
-    del net3, y
-
-    torch.cuda.empty_cache()
-
-    net5 = DreamHourglass(
-        n_keypoints,
-        internalize_spatial_softmax=False,
-        skip_connections=True,
-        deconv_decoder=False,
-    ).cuda()
-    y = net5(net_input.cuda())
-    print(y[-1].shape)
-    print()
-    del net5, y
-
-    net7 = DreamHourglass(
-        n_keypoints,
-        internalize_spatial_softmax=False,
-        skip_connections=True,
-        deconv_decoder=True,
-    ).cuda()
-    y = net7(net_input.cuda())
-    print(y[-1].shape)
-    print()
-    del net7, y
-
-    torch.cuda.empty_cache()
-
-    # Testing DreamHourglassMultiStage variations
-    print("DreamHourglassMultiStage")
-    for n in range(1, 7):
-        print("{}-stage".format(n))
-        net = DreamHourglassMultiStage(
-            n_keypoints, n_stages=n, internalize_spatial_softmax=False
-        ).cuda()
-        y = net(net_input.cuda())
-        print(y[-1].shape)
-        print()
-        del net, y
-        torch.cuda.empty_cache()
-
-    # Testing DreamHourglassMultiStage variations
-    print("DreamHourglassMultiStage: deconvolutional decoder")
-    for n in range(1, 7):
-        print("{}-stage".format(n))
-        net = DreamHourglassMultiStage(
-            n_keypoints,
-            n_stages=n,
-            internalize_spatial_softmax=False,
-            deconv_decoder=True,
-        ).cuda()
-        y = net(net_input.cuda())
-        print(y[-1].shape)
-        print()
-        del net, y
-        torch.cuda.empty_cache()
+#if __name__ == "__main__":
+#    import torch
+#
+#    # Unit test parameters
+#    n_keypoints = 7
+#    batch_size = 2
+#
+#    # Unit testing network construction and forward
+#    print("DreamHourglassMultiStage: upsample decoder")
+#    for n in range(1, 7):
+#        print("{}-stage".format(n))
+#        net = DreamHourglassMultiStage(
+#            n_keypoints,
+#            n_stages=n,
+#            internalize_spatial_softmax=False,
+#            deconv_decoder=False,
+#            full_output=True,
+#        ).cuda()
+#        y = net(torch.zeros(batch_size, 3, 400, 400).cuda())
+#        print(y[-1].shape)
+#        print()
+#        del net, y
+#        torch.cuda.empty_cache()
+#
+#    raise ()
+#
+#    net_input_height = 400  # 480
+#    net_input_width = 400  # 640
+#
+#    net_input = torch.zeros(batch_size, 3, net_input_height, net_input_width)
+#    print("net_input shape: {}".format(net_input.shape))
+#
+#    print("ResnetSimple")
+#    net = ResnetSimple(n_keypoints).cuda()
+#    y = net(net_input.cuda())
+#    print(y[-1].shape)
+#    print()
+#    del net, y
+#
+#    print("ResnetSimpleFull")
+#    net = ResnetSimple(n_keypoints, full=True).cuda()
+#    y = net(net_input.cuda())
+#    print(y[-1].shape)
+#    print()
+#    del net, y
+#
+#    print("DOPE")
+#    net = DopeNetworkBelief().cuda()
+#    y = net(net_input.cuda())
+#    print(y[-1].shape)
+#    print()
+#    del net, y
+#
+#    torch.cuda.empty_cache()
+#
+#    # Testing DreamHourglass variations
+#    print("DreamHourglass")
+#    net1 = DreamHourglass(
+#        n_keypoints,
+#        internalize_spatial_softmax=False,
+#        skip_connections=False,
+#        deconv_decoder=False,
+#    ).cuda()
+#    y = net1(net_input.cuda())
+#    print(y[-1].shape)
+#    print()
+#    del net1, y
+#
+#    net3 = DreamHourglass(
+#        n_keypoints,
+#        internalize_spatial_softmax=False,
+#        skip_connections=False,
+#        deconv_decoder=True,
+#    ).cuda()
+#    y = net3(net_input.cuda())
+#    print(y[-1].shape)
+#    print()
+#    del net3, y
+#
+#    torch.cuda.empty_cache()
+#
+#    net5 = DreamHourglass(
+#        n_keypoints,
+#        internalize_spatial_softmax=False,
+#        skip_connections=True,
+#        deconv_decoder=False,
+#    ).cuda()
+#    y = net5(net_input.cuda())
+#    print(y[-1].shape)
+#    print()
+#    del net5, y
+#
+#    net7 = DreamHourglass(
+#        n_keypoints,
+#        internalize_spatial_softmax=False,
+#        skip_connections=True,
+#        deconv_decoder=True,
+#    ).cuda()
+#    y = net7(net_input.cuda())
+#    print(y[-1].shape)
+#    print()
+#    del net7, y
+#
+#    torch.cuda.empty_cache()
+#
+#    # Testing DreamHourglassMultiStage variations
+#    print("DreamHourglassMultiStage")
+#    for n in range(1, 7):
+#        print("{}-stage".format(n))
+#        net = DreamHourglassMultiStage(
+#            n_keypoints, n_stages=n, internalize_spatial_softmax=False
+#        ).cuda()
+#        y = net(net_input.cuda())
+#        print(y[-1].shape)
+#        print()
+#        del net, y
+#        torch.cuda.empty_cache()
+#
+#    # Testing DreamHourglassMultiStage variations
+#    print("DreamHourglassMultiStage: deconvolutional decoder")
+#    for n in range(1, 7):
+#        print("{}-stage".format(n))
+#        net = DreamHourglassMultiStage(
+#            n_keypoints,
+#            n_stages=n,
+#            internalize_spatial_softmax=False,
+#            deconv_decoder=True,
+#        ).cuda()
+#        y = net(net_input.cuda())
+#        print(y[-1].shape)
+#        print()
+#        del net, y
+#        torch.cuda.empty_cache()

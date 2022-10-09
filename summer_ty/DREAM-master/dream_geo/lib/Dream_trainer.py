@@ -189,10 +189,12 @@ class Trainer(object):
                 next_img = batch['next_image_rgb_input'].to(device)
                 if phase == "PlanA":
                     outputs = model(next_img, pre_img, pre_hm, repro_hm)
-                elif phase == "Origin":
+                elif phase == "CenterTrack+Repro":
                     outputs = model(next_img, pre_img, repro_hm)
-                elif phase == "Origin_worepro":
-                    outputs = model(next_img, pre_img, pre_hm)
+                elif phase == "CenterTrack":
+                    pre_origin_hm = batch["prev_origin_belief_maps"].to(device)
+                    pre_origin_hm = pre_origin_hm.unsqueeze(1)
+                    outputs = model(next_img, pre_img, pre_origin_hm)
                 else:
                     raise ValueError
                 # outputs = model(next_img, pre_img, pre_hm, repro_hm)
@@ -233,10 +235,12 @@ class Trainer(object):
 #            print('next_img.size', next_img.shape)
             if phase == "PlanA":
                 outputs = model(next_img, pre_img, pre_hm, repro_hm)
-            elif phase == "Origin":
+            elif phase == "CenterTrack+Repro":
                 outputs = model(next_img, pre_img, repro_hm)
-            elif phase == "Origin_worepro":
-                outputs = model(next_img, pre_img, pre_hm)
+            elif phase == "CenterTrack":
+                pre_origin_hm = batch["prev_origin_belief_maps"].to(device)
+                pre_origin_hm = pre_origin_hm.unsqueeze(1)
+                outputs = model(next_img, pre_img, pre_origin_hm)
             else:
                 raise ValueError 
 #            outputs = model(next_img)
@@ -260,10 +264,10 @@ class Trainer(object):
                         print('loss_tracking', loss_tracking)
                     
                     if batch_idx % 50 == 0:
-                        writer.add_scalar(f"training_loss", loss_all, batch_idx + (epoch-1) * len(data_loader))
-                        writer.add_scalar(f"heatmap_loss", loss_hm, batch_idx + (epoch-1) * len(data_loader))
-                        writer.add_scalar(f"reg_loss", loss_reg, batch_idx + (epoch-1) * len(data_loader))
-                        writer.add_scalar(f"tracking_loss", loss_tracking, batch_idx + (epoch-1) * len(data_loader))
+                        writer.add_scalar(f"loss/training_loss", loss_all, batch_idx + (epoch-1) * len(data_loader))
+                        writer.add_scalar(f"loss/heatmap_loss", loss_hm, batch_idx + (epoch-1) * len(data_loader))
+                        writer.add_scalar(f"loss/reg_loss", loss_reg, batch_idx + (epoch-1) * len(data_loader))
+                        writer.add_scalar(f"loss/tracking_loss", loss_tracking, batch_idx + (epoch-1) * len(data_loader))
                         # 我们一共可视化这些东西
                         # 上一帧的input图
                         # 上一帧的一张热力图

@@ -16,7 +16,8 @@ class opts(object):
     self.parser.add_argument('--dataset', default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_1003/",
                              help='see lib/dataset/dataset_facotry for ' + 
                             'available datasets')
-    self.parser.add_argument('--val_dataset', default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/valdata_randomtex/")
+    self.parser.add_argument("--add_dataset", default=None, help="add more data if required")
+    self.parser.add_argument('--val_dataset', default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/validation/")
     self.parser.add_argument("--infer_dataset", default = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/synthetic_test_1005/")
     self.parser.add_argument('--root_dir', type=str, default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/")
     self.parser.add_argument('--test_dataset', default='',
@@ -55,6 +56,7 @@ class opts(object):
                              help='used when training in slurm clusters.')
 
     # log
+    self.parser.add_argument('--is_real', default=False, help="infer in different real datasets")
     self.parser.add_argument('--print_iter', type=int, default=0, 
                              help='disable progress bar and print to screen.')
     self.parser.add_argument('--save_all', action='store_true',
@@ -288,6 +290,7 @@ class opts(object):
       if opt.ignore_loaded_cats != '' else []
 
     opt.num_workers = max(opt.num_workers, 2 * len(opt.gpus))
+#    opt.num_workers = 1
     opt.pre_img = False
     if 'tracking' in opt.task:
       print('Running tracking')

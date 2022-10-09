@@ -178,7 +178,7 @@ def save_inference(opt):
         
 
     
-    results_path = os.path.join(opt.save_dir, "validation_and_results")
+    results_path = os.path.join(opt.save_dir, "validation")
     exists_or_mkdir(results_path)
     resultslist = os.listdir(results_path)
     length = len(resultslist)
@@ -234,9 +234,9 @@ def save_inference(opt):
         save_results(training_log, kp_metrics_pure, pnp_results_pure, mode="pure")
         
         # inference in real
-        real_test_info = inference_real(opt, "/root/autodl-tmp/dream_data/data/real/realsense_split_info.json")
+        real_test_info = inference_real(opt)
         kp_metrics_real, pnp_results_real = real_test_info[0], real_test_info[1]
-        save_results(training_log, kp_metrics_real, pnp_results_real, mode="real")
+        save_results(training_log, kp_metrics_real, pnp_results_real, mode="panda-3cam_realsense")
         
         # save in json
         meta_path = os.path.join(results_path, "info_{}.json".format(each_dir.replace('.pth', '')))

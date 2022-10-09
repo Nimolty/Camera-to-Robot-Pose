@@ -787,6 +787,7 @@ def analyze_ndds_center_dream_dataset(
     batch_size = opt.batch_size
     num_workers = opt.num_workers
     gpu_ids = opt.gpus
+    dataset_path = "/root/autodl-tmp/dream_data/data/real"
     
     # Input argument handling
     assert (
@@ -862,7 +863,7 @@ def analyze_ndds_center_dream_dataset(
 #            kp_imgs, rows=2, cols=4, inner_padding_px=10
 #            )
 #            mosaic_path = os.path.join(
-#            output_dir,"real_overlay_imgs"
+#            output_dir,is_real,"real_overlay_imgs_all"
 #            )
 #            dream.utilities.exists_or_mkdir(mosaic_path)
 #            mosaic_images.save(
@@ -946,7 +947,8 @@ def analyze_ndds_center_dream_dataset(
         all_gt_kp_positions = np.array(all_gt_kp_positions)
         # camera_K = np.array([[502.30, 0.0, 319.5], [0, 502.30, 179.5], [0, 0, 1]])
         if is_real:
-            camera_K = np.array([[615.52392578125, 0, 328.2606506347656], [0.0, 615.2191772460938, 251.7917022705078], [0, 0, 1.0]]) 
+            camera_data_path = os.path.join(dataset_path, is_real, "_camera_settings.json")
+            camera_K = dream.utilities.load_camera_intrinsics(camera_data_path)
         else:
             camera_K = np.array([[502.30, 0.0, 319.5], [0, 502.30, 179.5], [0, 0, 1]])
         for kp_projs_est, kp_projs_gt, kp_pos_gt in zip(
@@ -1281,9 +1283,9 @@ def keypoint_metrics(
 
         if (
             # kp_proj_gt[0] <= 140.0
-            kp_proj_gt[0] <= gap
+            kp_proj_gt[0] <= 0.0
             # or kp_proj_gt[0] >= image_resolution[0] - 140.0
-            or kp_proj_gt[0] >= image_resolution[0] - gap
+            or kp_proj_gt[0] >= image_resolution[0]
             or kp_proj_gt[1] < 0.0
             or kp_proj_gt[1] > image_resolution[1]
         ):

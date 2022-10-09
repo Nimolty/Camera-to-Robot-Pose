@@ -8,7 +8,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '6'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '2,3'
+os.environ["CUDA_VISIBLE_DEVICES"] = "6"
 # import _init_paths  
 from enum import IntEnum
 
@@ -46,7 +47,7 @@ def get_optimizer(opt, model):
       assert 0, opt.optim
     return optimizer
 
-def save_results(train_log, kp_metrics, pnp_results, mode):
+def save_results(train_log, kp_metrics, pnp_results, mode, writer, epoch):
     train_log[mode] = {}
     train_log[mode]["kp_metrics"] = {}
     train_log[mode]["kp_metrics"]["correctness"] = []
@@ -69,6 +70,13 @@ def save_results(train_log, kp_metrics, pnp_results, mode):
                         kp_metrics["num_found_gt_outframe"],
                         kp_metrics["num_gt_outframe"],
                     )
+        writer.add_scalar(f"{mode}/out_of_frame_not_found_rate (correct)", round(float(kp_metrics["num_missing_gt_outframe"])
+                        / float(kp_metrics["num_gt_outframe"])
+                        * 100.0, 3), epoch)
+        writer.add_scalar(f"{mode}/out_of_frame_found_rate (incorrect)", round(float(kp_metrics["num_found_gt_outframe"])
+                        / float(kp_metrics["num_gt_outframe"])
+                        * 100.0, 3), epoch)
+        
     else:
         out_of_frame_not_found_rate = None
         out_of_frame_found_rate = None
@@ -89,6 +97,14 @@ def save_results(train_log, kp_metrics, pnp_results, mode):
                     kp_metrics["num_found_gt_inframe"],
                     kp_metrics["num_gt_inframe"],
                 )
+                
+        writer.add_scalar(f"{mode}/in_frame_not_found_rate (incorrect)", round(float(kp_metrics["num_missing_gt_inframe"])
+                        / float(kp_metrics["num_gt_inframe"])
+                        * 100.0, 3), epoch)
+        writer.add_scalar(f"{mode}/in_frame_found_rate (correct)", round(float(kp_metrics["num_found_gt_inframe"])
+                    / float(kp_metrics["num_gt_inframe"])
+                    * 100.0, 3), epoch)
+        
         train_log[mode]["kp_metrics"]["correctness"] += [in_frame_not_found_rate, in_frame_found_rate]
         if kp_metrics["num_found_gt_inframe"] > 0:
             L2_info = "L2 error (px) for in-frame keypoints (n = {}):".format(
@@ -108,6 +124,12 @@ def save_results(train_log, kp_metrics, pnp_results, mode):
             train_log[mode]["kp_metrics"]["results"]["Mean_pck"] = Mean_pck
             train_log[mode]["kp_metrics"]["results"]["Median_pck"] = Median_pck
             train_log[mode]["kp_metrics"]["results"]["std_pck"] = std_pck
+            
+            writer.add_scalar(f"{mode}/kp_AUC", round(kp_metrics["l2_error_auc"], 5), epoch)
+            writer.add_scalar(f"{mode}/Mean_pck", round(kp_metrics["l2_error_mean_px"], 5), epoch)
+            writer.add_scalar(f"{mode}/Median_pck", round(kp_metrics["l2_error_median_px"], 5), epoch)
+            writer.add_scalar(f"{mode}/std_pck", round(kp_metrics["l2_error_std_px"], 5), epoch)
+            
         else:
             train_log[mode]["kp_metrics"]["results"] = ["No in-frame gt keypoints were detected."]
     else:
@@ -127,6 +149,7 @@ def save_results(train_log, kp_metrics, pnp_results, mode):
                         n_pnp_successful,
                         n_pnp_possible,
                     )
+        writer.add_scalar(f"{mode}/pnp_success", round(float(n_pnp_successful) / float(n_pnp_possible) * 100.0, 3), epoch)
         train_log[mode]["pnp_results"]["correctness"] += [fail, success]
         ADD = "ADD (m) for frames where PNP was successful when viable (n = {}):".format(
                         n_pnp_successful
@@ -143,6 +166,10 @@ def save_results(train_log, kp_metrics, pnp_results, mode):
         train_log[mode]["pnp_results"]["results"]["Mean_ADD"] = Mean_ADD
         train_log[mode]["pnp_results"]["results"]["Median_ADD"] = Median_ADD
         train_log[mode]["pnp_results"]["results"]["Std_ADD"] = Std_ADD
+        writer.add_scalar(f"{mode}/ADD_AUC", round(pnp_results["add_auc"], 5), epoch)
+        writer.add_scalar(f"{mode}/Mean_ADD", round(pnp_results["add_mean"], 5), epoch)
+        writer.add_scalar(f"{mode}/Median_ADD", round(pnp_results["add_median"], 5), epoch)
+        writer.add_scalar(f"{mode}/Std_ADD", round(pnp_results["add_std"], 5), epoch)
             
     
     
@@ -163,6 +190,12 @@ def main(opt):
     input_data_path = opt.dataset # 这里是dataset的路径
     val_data_path = opt.val_dataset
     found_data = find_ndds_seq_data_in_dir(input_data_path)
+    if opt.add_dataset:
+        add_data = find_ndds_seq_data_in_dir(opt.add_dataset)
+        print("length of original found_data", len(found_data))
+        found_data += add_data
+        print("length of current found_data", len(found_data))
+    
     val_data = find_ndds_seq_data_in_dir(val_data_path)
     keypoint_names = [
     "Link0",
@@ -273,36 +306,42 @@ def main(opt):
         
         
 #        # validation
-#        mean_valid_loss_per_batch, mean_valid_hm_loss_per_batch, mean_valid_reg_loss_per_batch = trainer.valid_epoch(val_loader, opt.device)
+        mean_valid_loss_per_batch, mean_valid_hm_loss_per_batch, mean_valid_reg_loss_per_batch = trainer.valid_epoch(val_loader, opt.device, phase=opt.phase)
         training_log = {}
-#        training_log["validation"] = {}
-#        training_log["validation"]["mean_valid_loss_all"] = mean_valid_loss_per_batch
-#        training_log["validation"]["mean_valid_loss_hm"] = mean_valid_hm_loss_per_batch
-#        training_log["validation"]["mean_valid_loss_reg"] = mean_valid_reg_loss_per_batch
+        training_log["validation"] = {}
+        training_log["validation"]["mean_valid_loss_all"] = mean_valid_loss_per_batch
+        training_log["validation"]["mean_valid_loss_hm"] = mean_valid_hm_loss_per_batch
+        training_log["validation"]["mean_valid_loss_reg"] = mean_valid_reg_loss_per_batch
+        
+        writer.add_scalar(f"validation/mean_valid_loss_all", mean_valid_loss_per_batch, epoch)
+        writer.add_scalar(f"validation/mean_valid_loss_hm", mean_valid_hm_loss_per_batch, epoch)
+        writer.add_scalar(f"validation/mean_valid_loss_reg", mean_valid_reg_loss_per_batch, epoch)
 #        
         # inference in synthetic test set
+        print("!!!!!!!!!!")
+        print("opt.phase", opt.phase)
         print('load_model', opt.load_model)
         opt.load_model = this_path
         print('load_model', opt.load_model)
         print('infer_dataset', opt.infer_dataset)
-        opt.infer_dataset = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/synthetic_test/"
+        opt.infer_dataset = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/synthetic_test_1005/"
         print('infer_dataset', opt.infer_dataset)
         syn_test_info = inference(opt)
         kp_metrics, pnp_results = syn_test_info[0], syn_test_info[1]
-        save_results(training_log, kp_metrics, pnp_results, mode="synthetic")
+        save_results(training_log, kp_metrics, pnp_results, mode="synthetic", writer=writer, epoch=epoch)
 #        
-#        # inference in pure test set
-#        print('infer_dataset', opt.infer_dataset)
-#        opt.infer_dataset = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/testdata/"
-#        print('infer_dataset', opt.infer_dataset)
-#        pure_test_info = inference(opt)
-#        kp_metrics_pure, pnp_results_pure = pure_test_info[0], pure_test_info[1]
-#        save_results(training_log, kp_metrics_pure, pnp_results_pure, mode="pure")
+        # inference in pure test set
+        print('infer_dataset', opt.infer_dataset)
+        opt.infer_dataset = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/pure_test/"
+        print('infer_dataset', opt.infer_dataset)
+        pure_test_info = inference(opt)
+        kp_metrics_pure, pnp_results_pure = pure_test_info[0], pure_test_info[1]
+        save_results(training_log, kp_metrics_pure, pnp_results_pure, mode="pure", writer=writer, epoch=epoch)
 #        
         # inference in real
-#        real_test_info = inference_real(opt, "/root/autodl-tmp/dream_data/data/real/realsense_split_info.json")
-#        kp_metrics_real, pnp_results_real = real_test_info[0], real_test_info[1]
-#        save_results(training_log, kp_metrics_real, pnp_results_real, mode="real")
+        real_test_info = inference_real(opt)
+        kp_metrics_real, pnp_results_real = real_test_info[0], real_test_info[1]
+        save_results(training_log, kp_metrics_real, pnp_results_real, mode="real", writer=writer, epoch=epoch)
         
         # save in json
         meta_path = os.path.join(results_path, "info_{}.json".format(epoch))

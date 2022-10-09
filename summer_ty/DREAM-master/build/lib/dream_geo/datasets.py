@@ -643,6 +643,9 @@ class CenterTrackSeqDataset(TorchDataset):
         self.mean = np.array(mean, dtype=np.float32).reshape(1, 1, 3)
         self.std = np.array(std, dtype=np.float32).reshape(1, 1, 3)
         self.seq_frame = seq_frame
+        self.seq_count_all = self.__len__()
+        self.black_count = 0
+        print('seq_count_all', self.seq_count_all)
         
         # If include_belief_maps is specified, include_ground_truth must also be
         # TBD: revisit better way of passing inputs, maybe to make one argument instead of two
@@ -788,9 +791,9 @@ class CenterTrackSeqDataset(TorchDataset):
 #            prev_belief_maps_as_tensor = torch.from_numpy(prev_belief_maps).float()
 #            sample["prev_belief_maps"] = prev_belief_maps_as_tensor
 #            
-#            prev_belief_maps_as_whole_np = dream.utilities.get_prev_hm(prev_kp_projs_raw_np, trans_input,self.input_w, self.input_h, hm_disturb = self.opt.hm_disturb, lost_disturb=self.opt.lost_disturb, fp_disturb=self.opt.fp_disturb) 
-#            prev_belief_maps_as_whole_as_tensor = torch.from_numpy(prev_belief_maps_as_whole_np).float()
-#            sample["prev_belief_maps_as_input_resolution"] = prev_belief_maps_as_whole_as_tensor
+            prev_origin_maps_as_whole_np = dream.utilities.get_prev_hm(prev_kp_projs_raw_np, trans_input,self.input_w, self.input_h, hm_disturb = self.opt.hm_disturb, lost_disturb=self.opt.lost_disturb) 
+            prev_origin_maps_as_whole_as_tensor = torch.from_numpy(prev_origin_maps_as_whole_np).float()
+            sample["prev_origin_belief_maps"] = prev_origin_maps_as_whole_as_tensor
             
             # print('next_kp_projs_net_output_as_tensor', next_kp_projs_net_output_as_tensor)
             # print('next_kp_projs_net_output_int_np', next_kp_projs_net_output_int_np)
@@ -806,14 +809,22 @@ class CenterTrackSeqDataset(TorchDataset):
             pnp_retval, next_kp_projs_est, prev_kp_projs_noised_np = dream.geometric_vision.get_pnp_keypoints(prev_kp_pos_gt_np, prev_kp_projs_gt, next_kp_pos_gt_np, camera_K, self.opt.hm_disturb, self.opt.lost_disturb) 
             
             
+#            if pnp_retval is None:
+#                self.black_count += 1
+#                print('############### New Batch ###################')
+#                print('Find one seq black', self.black_count)
+#                print('All seqs', self.seq_count_all)
+#                print('Curent black ratio (percent)', self.black_count / self.seq_count_all * 100)
+            
             prev_belief_maps_as_whole_np = dream.utilities.get_prev_hm_wo_noise(prev_kp_projs_noised_np, trans_input, self.input_w, self.input_h)
             prev_belief_maps_as_whole_as_tensor = torch.from_numpy(prev_belief_maps_as_whole_np).float()
             sample["prev_belief_maps"] = prev_belief_maps_as_whole_as_tensor
+            
             repro_belief_maps_as_whole_np = dream.utilities.get_prev_hm_wo_noise(next_kp_projs_est, trans_input,self.input_w, self.input_h)  
             repro_belief_maps_as_whole_as_tensor = torch.from_numpy(repro_belief_maps_as_whole_np).float()
             sample["repro_belief_maps"] = repro_belief_maps_as_whole_as_tensor
 
-
+ 
         return sample
 
 #if __name__ == "__main__":
