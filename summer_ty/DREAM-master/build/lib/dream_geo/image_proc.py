@@ -12,6 +12,7 @@ import torch
 import torchvision.transforms.functional as TVTransformsFunc
 import webcolors
 from copy import deepcopy
+import time
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
@@ -1029,7 +1030,7 @@ def create_belief_map_as_whole(image_resolution, # image_size (width x height)
 # Code adapted from code originally written by Jon Tremblay
 def peaks_from_belief_maps(belief_map_tensor, offset_due_to_upsampling):
     # print("pfbm**************************************")
-
+    #t1 = time.time()
     assert (
         len(belief_map_tensor.shape) == 3
     ), "Expected belief_map_tensor to have shape [N x height x width], but it is {}.".format(
@@ -1043,7 +1044,7 @@ def peaks_from_belief_maps(belief_map_tensor, offset_due_to_upsampling):
 
     all_peaks = []
     peak_counter = 0
-
+    
     for j in range(belief_map_tensor.size()[0]):
         belief_map = belief_map_tensor[j].clone()
         map_ori = belief_map.cpu().data.numpy()
@@ -1112,6 +1113,10 @@ def peaks_from_belief_maps(belief_map_tensor, offset_due_to_upsampling):
                 peaks_avg.append(
                     (p[0] + offset_due_to_upsampling, p[1] + offset_due_to_upsampling)
                 )
+        
+        #t2 = time.time()
+        #print("t2 - t1", t2 - t1)
+        
         # Note: Python3 doesn't support len for zip object
         peaks_len = min(
             len(np.nonzero(peaks_binary)[1]), len(np.nonzero(peaks_binary)[0])
@@ -1130,5 +1135,8 @@ def peaks_from_belief_maps(belief_map_tensor, offset_due_to_upsampling):
 
         all_peaks.append(peaks_with_score_and_id)
         peak_counter += peaks_len
+        
+        #t3 = time.time()
+        # print("t3 - t2", t3 - t2)
 
     return all_peaks

@@ -9,7 +9,7 @@ from __future__ import division
 from __future__ import print_function
 import os
 # os.environ['CUDA_VISIBLE_DEVICES'] = '2,3'
-os.environ["CUDA_VISIBLE_DEVICES"] = "1,7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "4"
 # import _init_paths  
 from enum import IntEnum
 
@@ -324,7 +324,7 @@ def main(opt):
         opt.load_model = this_path
         print('load_model', opt.load_model)
         print('infer_dataset', opt.infer_dataset)
-        opt.infer_dataset = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/synthetic_test_1005/"
+        opt.infer_dataset = "/root/autodl-tmp/dream_data/test1001/"
         print('infer_dataset', opt.infer_dataset)
         syn_test_info = inference(opt)
         kp_metrics, pnp_results = syn_test_info[0], syn_test_info[1]
@@ -341,7 +341,7 @@ def main(opt):
         # inference in real
         real_test_info = inference_real(opt)
         kp_metrics_real, pnp_results_real = real_test_info[0], real_test_info[1]
-        save_results(training_log, kp_metrics_real, pnp_results_real, mode="real", writer=writer, epoch=epoch)
+        save_results(training_log, kp_metrics_real, pnp_results_real, mode="panda-3cam_realsense", writer=writer, epoch=epoch)
         
         # save in json
         meta_path = os.path.join(results_path, "info_{}.json".format(epoch))

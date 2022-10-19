@@ -11,8 +11,8 @@ from __future__ import print_function
 # import tools._init_paths as _init_paths
 
 import os
-# os.environ['CUDA_VISIBLE_DEVICES'] = '2,3'
-os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+# os.environ['CUDA_VISIBLE_DEVICES'] = '6'
+os.environ["CUDA_VISIBLE_DEVICES"] = "3,4,5"
 import sys
 import cv2
 import json
@@ -25,6 +25,9 @@ from tqdm import tqdm
 import dream_geo as dream
 from ruamel.yaml import YAML
 from PIL import Image as PILImage
+import time
+
+
 
 def find_dataset(opt):
     keypoint_names = [
@@ -46,6 +49,8 @@ def find_dataset(opt):
     
     found_videos = []
     for each_dir in dirlist:
+        if each_dir.endswith(".json"):
+            continue
         output_dir = os.path.join(input_dir, each_dir)
         # output_dir = ../../franka_data_0825/xxxxx
         found_video = [os.path.join(output_dir, f) for f in os.listdir(output_dir) \
@@ -74,35 +79,41 @@ def inference(opt):
     with torch.no_grad():
         found_videos = find_dataset(opt)
         json_list, detected_kps_list = [], []
-        for found_video_0 in tqdm(found_videos[:50]):
+        for video_idx, found_video_0 in tqdm(enumerate(found_videos[:5])):
         # found_video_0 = found_videos[j]
         # print('found_video_0', found_video_0) 
         # print('json_path', found_video_0[1])
             length = len(found_video_0[0])
             # print(length)
-            detector = DreamDetector(opt, keypoint_names, is_real=False, is_ct=True)
+            detector = DreamDetector(opt, keypoint_names, is_real=False, is_ct=True, idx=video_idx)
             for i, img_path in enumerate(found_video_0[0]):
                 if i == 0:
                     continue
                 json_path = found_video_0[1][i]
+#                print('img_path', img_path)
+#                print('json_path', json_path)
                 img = cv2.imread(img_path)
+                
 #                img = PILImage.open(img_path).convert("RGB")
 #                img_shrink_and_crop = dream.image_proc.preprocess_image(
 #                img, (opt.input_w, opt.input_h), "shrink-and-crop"
 #                )
 #                img_shrink_and_crop = np.asarray(img_shrink_and_crop)
-                print('img.size', img.shape)
-                
-#                ret, detected_kps_netin = detector.run(img, i, json_path, is_final=True)
+#                print('img.size', img.size)
+#                
+#                ret, detected_kps_netin = detector.run(img_shrink_and_crop, i, json_path, is_final=True)
 #                detected_kps_np = dream.image_proc.convert_keypoints_to_raw_from_netin(
 #                    detected_kps_netin,
 #                    (opt.input_w, opt.input_h),
 #                    (640, 360),
 #                    "shrink-and-crop", 
 #                )
-                ret, detected_kps_np = detector.run(img, i, json_path, is_final=True)            
+                t1 = time.time()
+                ret, detected_kps_np = detector.run(img, i, json_path, is_final=True)  
+                t2 = time.time()
+#                print("消耗一次时间", t2 - t1)          
                 output_dir = img_path.rstrip('png')
-                np.savetxt(output_dir + 'txt', detected_kps_np)
+                # np.savetxt(output_dir + 'txt', detected_kps_np)
                 json_list.append(json_path)
                 detected_kps_list.append(detected_kps_np) 
                     # print(detected_kps)
@@ -139,8 +150,8 @@ def inference_real(opt):
     
     with torch.no_grad():
         for idx, (video_images, video_jsons) in tqdm(enumerate((zip(real_images, real_jsons)))):
-            if idx >= 0 : 
-                detector = DreamDetector(opt,real_keypoint_names, is_real=opt.is_real, is_ct=True)
+            if idx == 0: 
+                detector = DreamDetector(opt,real_keypoint_names, is_real=opt.is_real, is_ct=True, idx=idx)
                 assert len(video_images) == len(video_jsons)
                 length = len(video_images)
                 
@@ -158,16 +169,34 @@ def inference_real(opt):
 #                    img, (opt.input_w, opt.input_h), "shrink-and-crop"
 #                    )
 #                    img_shrink_and_crop = np.asarray(img_shrink_and_crop)
-
-                    ret, detected_kps_np = detector.run(img, j, json_path, is_final=True)
+                    save_dir = f"/root/autodl-tmp/camera_to_robot_pose/topk_check/{idx}/"
+                    dream.utilities.exists_or_mkdir(save_dir)
+#                    ret, detected_kps_np = detector.run(img, j, json_path, is_final=True, save_dir=save_dir)
 #                    detected_kps_np = dream.image_proc.convert_keypoints_to_raw_from_netin(
 #                        detected_kps_netin,
 #                        (opt.input_w, opt.input_h),
 #                        img.size,
 #                        "shrink-and-crop", 
 #                    )
-                    # output_dir = img_path.rstrip('png')
-                    # np.savetxt(output_dir + 'txt', detected_kps_np)
+
+                    # t1 = time.time()
+                    ret, detected_kps_np = detector.run(img, j, json_path, is_final=True, save_dir=save_dir)
+                    
+                    img_PIL = PILImage.open(img_path)
+                    
+#                    print("total", ret["tot"])
+#                    print("load time", ret["load"])
+#                    print("pre_time", ret["pre"])
+#                    print("net time", ret["net"])
+#                    print("dec time", ret["dec"])
+#                    print("post time", ret["post"])
+#                    print("merge time", ret["merge"])
+#                    print("display time", ret["display"])
+#                    print("tracking time", ret["track"])
+                    # t2 = time.time()
+                    # print("t2 - t1", t2 - t1)
+                    output_dir = img_path.rstrip('png')
+                    np.savetxt(output_dir + 'txt', detected_kps_np)
                     json_list.append(json_path)
                     detected_kps_list.append(detected_kps_np) 
         
@@ -187,7 +216,7 @@ def inference_real(opt):
         output_dir,
         is_real=opt.is_real)
         return analysis_info
-                
+        return True               
                 
     
      

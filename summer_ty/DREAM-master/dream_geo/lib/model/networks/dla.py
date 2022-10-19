@@ -17,7 +17,8 @@ from .ca_model import BaseModelCA
 from .base_model import BaseModel, BaseModelPlanA
 import dream_geo as dream
 import copy
-
+from torch import batch_norm, einsum
+from einops import rearrange, repeat
 try:
     from .DCNv2.dcn_v2 import DCN
 except:
@@ -353,6 +354,17 @@ def dla34(pretrained=True, **kwargs):  # DLA-34
     else:
         print('Warning: No ImageNet pretrain!!')
     return model
+    
+def dla341(pretrained=True, **kwargs):  # DLA-34
+    model = DLA([1, 1, 1, 2, 2, 1],
+                [16, 32, 64, 128, 256, 512],
+                block=BasicBlock, **kwargs)
+    if pretrained:
+        model.load_pretrained_model(
+            data='imagenet', name='dla34', hash='ba72cf86')
+    else:
+        print('Warning: No ImageNet pretrain!!')
+    return model
 
 def dla102(pretrained=None, **kwargs):  # DLA-102
     Bottleneck.expansion = 2
@@ -563,13 +575,13 @@ class DLAUp(nn.Module):
     def __init__(self, startp, channels, scales, in_channels=None, 
                  node_type=DeformConv):
         super(DLAUp, self).__init__()
-        self.startp = startp
+        self.startp = startp # startp为2, channels为[64, 128, 256, 512], sclaes = [1,2,4,8]
         if in_channels is None:
             in_channels = channels
         self.channels = channels
         channels = list(channels)
         scales = np.array(scales, dtype=int)
-        for i in range(len(channels) - 1):
+        for i in range(len(channels) - 1): # len(channels) == 4
             j = -i - 2
             setattr(self, 'ida_{}'.format(i),
                     IDAUp(channels[j], in_channels[j:],
@@ -753,7 +765,7 @@ class DLASegCA(BaseModelCA):
         return [fus_hm, [x[0], x[1], x[2], x[5]], [pre_img[0], pre_img[1], pre_img[2], pre_img[5]]]
 
 class TransformerEncoderLayer(nn.Module):
-    def __init__(self, d_inp, d_model, d_ffn=1024,
+    def __init__(self, d_inp, d_model, n_k, d_ffn=1024,
                  dropout=0.1,
                  n_heads=8):
         # d_out = d_model * n_heads
@@ -766,7 +778,7 @@ class TransformerEncoderLayer(nn.Module):
         self.d_out = self.d_model * self.n_heads
         
         # cross attention
-        self.cross_attn = MHCA(self.n_heads, self.d_inp, self.d_out)
+        self.cross_attn = MHCA_ein(self.n_heads, self.d_inp, self.d_out, n_k)
         self.dropout1 = nn.Dropout(self.dropout)
         self.norm1 = nn.LayerNorm(self.d_inp)
         
@@ -796,7 +808,7 @@ class TransformerEncoderLayer(nn.Module):
         return query
 
 def _get_clones(module, N):
-    return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
+    return nn.ModuleList([module for i in range(N)])
 
 class TransformerEncoder(nn.Module):
     def __init__(self, decoder_layer, num_layers):
@@ -854,15 +866,129 @@ class MHCA(nn.Module):
         x = x.view(batch_size, N, -1)
         x = self.fc(x)
         return x
+
+class MHCA_ein(nn.Module):
+    def __init__(self, num_heads, inp_dim, hid_dim, n):
+        super().__init__()
+        self.hid_dim = hid_dim
+        # self.v_dim = v_dim
+        self.inp_dim = inp_dim
+        self.n_heads = num_heads
+        self.n = n
         
+        assert self.hid_dim % self.n_heads == 0
+        
+        self.w_q = nn.Linear(self.inp_dim, self.hid_dim, bias=False)
+        self.w_k = nn.Linear(self.inp_dim, self.hid_dim, bias=False)
+        self.w_v = nn.Linear(self.inp_dim, self.hid_dim, bias=False)
+        
+        self.fc = nn.Linear(self.hid_dim, self.inp_dim)
+        self.scale = math.sqrt(self.hid_dim // self.n_heads)
+        self.pos_embed = nn.Parameter(torch.zeros(self.n_heads, self.n, self.n))
+    
+    def forward(self, query, key, value):
+        b, n, m, h = *value.shape, self.n_heads
+        Q = self.w_q(query)
+        K = self.w_k(key)
+        V = self.w_v(value)
+        
+        Q = rearrange(Q, "b n (h d) -> b h n d", h=h)
+        K = rearrange(K, "b n (h d) -> b h n d", h=h)
+        V = rearrange(V, "b n (h d) -> b h n d", h=h)
+        
+        energy = einsum("b h i d, b h j d -> b h i j", Q, K) / self.scale
+        if self.pos_embed is not None: 
+#            print('energy', energy.shape)
+#            print("self.pos_embed", self.pos_embed.shape)
+#            print("add pos embedding")
+            energy = energy + self.pos_embed
+        attn = torch.softmax(energy, dim=-1)
+        out = einsum("b h i j, b h j d -> b h i d", attn, V)
+        out = rearrange(out, "b h n d -> b n (h d)", b=b)
+        out = self.fc(out)
+        return out
+
 def get_topk_pairs(pre_hm, repro_hm, K):
     B_hm, C_hm, H_hm, W_hm = pre_hm.shape # C_hm实际为1
     assert pre_hm.shape == repro_hm.shape
     pre_topk = torch.topk(pre_hm.view(B_hm,C_hm,-1), K, dim=-1)[1].float()
-    pre_topk /= (H_hm * W_hm) # 得到小数，是比例的， 得到B_hm x C_hm(实则为1) x K
+    pre_topk_float = pre_topk /  (H_hm * W_hm) # 得到小数，是比例的， 得到B_hm x C_hm(实则为1) x K
     repro_topk = torch.topk(repro_hm.view(B_hm, C_hm, -1), K, dim=-1)[1].float()
-    repro_topk /= (H_hm * W_hm)
-    return pre_topk.view(B_hm, -1), repro_topk.view(B_hm, -1) # B_hm x K
+    repro_topk_float = repro_topk / (H_hm * W_hm)
+    return pre_topk_float.view(B_hm, -1), repro_topk_float.view(B_hm, -1), pre_topk.view(B_hm, -1), repro_topk.view(B_hm, -1) # B_hm x K
+
+def get_topk_index(pre_hm, repro_hm, K):
+    B_hm, C_hm, H_hm, W_hm = pre_hm.shape # C_hm实际为7
+    assert pre_hm.shape == repro_hm.shape
+    pre_topk = torch.topk(pre_hm.flatten(2), K, dim=-1)[1].type(torch.long) # B_hm x 7 x K
+    pre_topk = pre_topk.view(B_hm, -1) # B_hm x (C_hm * K)
+    pre_topk_indices = torch.zeros(B_hm, C_hm * K, 2)
+    pre_topk_indices[:, :, 0] = pre_topk % W_hm
+    pre_topk_indices[:, :, 1] = pre_topk // W_hm # B x (C_hm * K) x 2
+    
+    repro_topk = torch.topk(repro_hm.flatten(2), K, dim=-1)[1].type(torch.long)
+    repro_topk = repro_topk.view(B_hm, -1)
+    repro_topk_indices = torch.zeros(B_hm, C_hm * K, 2)
+    repro_topk_indices[:, :, 0] = repro_topk % W_hm
+    repro_topk_indices[:, :, 1] = repro_topk // W_hm
+    
+    return pre_topk_indices, repro_topk_indices # B_hm x (C_hm * K) x 2
+    
+def get_topk_features_scale(feats, topk_inds,  scale_num, kernel = 3):
+    """
+
+    Parameters
+    ----------
+    feats : previous features of shape [B, C, H, W]
+    topk_inds : pre_topk_indices of shape [B, K, 2]
+    kernel : The size of windw, The default is 3.
+    scale_num : the scale num of differenct scales of features
+    N : kernel ** 2
+    Returns
+    -------
+    neighbor_feats [B, K, N, 2]. Note N = kernel ** 2
+    """
+    B, C, H, W = feats.shape
+    _, K, _ = topk_inds.shape
+    assert H == W
+    neighbor_coords = torch.arange(-(kernel // 2), (kernel // 2) + 1) 
+    k_size = neighbor_coords.shape[0]
+    neighbor_coords = torch.flatten(
+        torch.stack(torch.meshgrid([neighbor_coords, neighbor_coords]), dim=0),
+        1,
+    ) # [2, N]  
+    # neighbor_coords default are [[-1, -1, -1,  0,  0,  0,  1,  1,  1],
+    #        [-1,  0,  1, -1,  0,  1, -1,  0,  1]]
+    neighbor_coords = (
+        neighbor_coords.permute(1, 0).contiguous().to(topk_inds)
+    ) # relative coordinate [N, 2]
+    neighbor_coords = (
+        topk_inds[:, :, None, :] * scale_num
+        + neighbor_coords[None, None, :, :]
+    ) # # coordinates [B, K, N, 2]
+    
+    neighbor_coords = torch.clamp(
+        neighbor_coords, min=0, max=H - 1
+    ) # prevent out of bound
+    
+    feat_id = (
+                neighbor_coords[:, :, :, 1] * W
+                + neighbor_coords[:, :, :, 0]
+            )  # pixel id [B, K, N]
+    # print('feat_id.shape', feat_id.shape)
+    feat_id = feat_id.reshape(B, -1).type(torch.long)  # pixel id [B, K*N]
+
+    batch_id = torch.from_numpy(np.indices((B, K))[0]).type(torch.long) # [B, K]
+    
+    selected_feat = (
+        feats
+        .reshape(B, C, -1)
+        .permute(0, 2, 1)
+        .contiguous()[batch_id.repeat(1, k_size**2), feat_id]
+    )  # [B,K * N, C]
+    
+    return selected_feat, batch_id.repeat(1, k_size**2), feat_id
+    
 
 def get_topk_features(pre_features, cur_features, pre_topk, repro_topk):
     B, C, H, W = pre_features.shape
@@ -898,10 +1024,21 @@ def substitute_topk_features(out, cur_features, repro_topk, mlp):
     cur_f = cur_f.permute(0, 3, 1, 2).contiguous()
     
     return cur_f
-    
-    
 
-
+def substitute_topk_features_scale(out, cur_features,batch_id, feat_id, mlp):
+    # out.shape : B x C x H x W
+    # B, C, H, W = cur_features.shape
+    cur_f = cur_features.permute(0, 2, 3, 1).contiguous()
+    B_q, H_q, W_q, C_q = cur_f.shape
+    cur_f = cur_f.view(B_q, -1, C_q)
+    cur_query = cur_f[batch_id, feat_id]
+    cur_out = torch.cat([out, cur_query], dim=-1)
+    cur_f[batch_id, feat_id] = mlp(cur_out)
+    cur_f = cur_f.view(B_q, H_q, W_q, C_q)
+    cur_f = cur_f.permute(0, 3, 1, 2).contiguous()
+    
+    return cur_f
+    
 
 class DLA_PlanA(BaseModelPlanA):
     def __init__(self, num_layers, heads, head_convs, opt, K=28):
@@ -915,12 +1052,25 @@ class DLA_PlanA(BaseModelPlanA):
         # print('this one')
         self.first_level = int(np.log2(down_ratio))
         self.last_level = 5
+        print('num_layers', num_layers)
         self.base = globals()['dla{}'.format(num_layers)](
             pretrained=(opt.load_model == ''), opt=opt)
         
         # print(self.base)
         channels = self.base.channels
         scales = [2 ** i for i in range(len(channels[self.first_level:]))]
+        
+#        channels_up = [i * 2 for i in channels]
+#        self.dla_up = DLAUp(
+#            self.first_level, channels_up[self.first_level:], scales,
+#            node_type=self.node_type)
+#        out_channel = channels_up[self.first_level]
+#
+#        self.ida_up = IDAUp(
+#            out_channel, channels_up[self.first_level:self.last_level], 
+#            [2 ** i for i in range(self.last_level - self.first_level)],
+#            node_type=self.node_type)
+        
         self.dla_up = DLAUp(
             self.first_level, channels[self.first_level:], scales,
             node_type=self.node_type)
@@ -932,8 +1082,8 @@ class DLA_PlanA(BaseModelPlanA):
             node_type=self.node_type)
         
         self.transformer = nn.ModuleList(
-            [copy.deepcopy(TransformerEncoder(
-                TransformerEncoderLayer(d_inp=16*(2**i), d_model=4*(2**i)), num_layers=3)
+            [TransformerEncoder(
+                TransformerEncoderLayer(d_inp=16*(2**i), d_model=4*(2**i)), num_layers=3
                 ) for i in range(6)])
         self.cat_layer = nn.ModuleList(
             [nn.Sequential(nn.Linear(16*(2**(i+1)), 32*(2**(i+1))),
@@ -942,7 +1092,7 @@ class DLA_PlanA(BaseModelPlanA):
                                       )
         self.K = K
 
-    def imgpre2feats(self, x, pre_img=None, pre_hm=None, repro_hm=None):
+    def imgpre2feats(self, x, pre_img=None, pre_hm=None, repro_hm=None, pre_hm_cls=None, repro_hm_cls=None):
         # 我决定在datasets中构建函数使得pre_hm转换为repro_hm，所以这里直接Input了
         x_pre = self.base(pre_img=pre_img, pre_hm=pre_hm) # 得到一个6元素的list
         x_cur = self.base(pre_img=x, pre_hm = repro_hm) #得到一个6元素的list
@@ -950,15 +1100,75 @@ class DLA_PlanA(BaseModelPlanA):
         # print("################## Plan A Start! ######################")
         x_out = []
         assert len(x_pre) == len(x_cur)
-        pre_topk_indices, repro_topk_indices = get_topk_pairs(pre_hm, repro_hm, self.K)
+        pre_topk_indices, repro_topk_indices, pre_topk_int, repro_topk_int = get_topk_pairs(pre_hm, repro_hm, self.K)
         for i in range(len(x_cur)):
             pre_features, cur_features = x_pre[i], x_cur[i]
+            
+            # PlanA plus Transformer 
             transformer = self.transformer[i]
             pre_key, cur_query = get_topk_features(pre_features, cur_features, pre_topk_indices, repro_topk_indices)
             out = transformer(cur_query, pre_key, pre_key)
             out = substitute_topk_features(out, cur_features, repro_topk_indices, self.cat_layer[i])
             # print(out.shape)
             assert out.shape == x_pre[i].shape
+            x_out.append(out)
+
+
+#            out = torch.cat([pre_features, cur_features], dim=1)
+#            print(out.shape)
+#            x_out.append(out)
+          
+        x_out = self.dla_up(x_out)
+        y = []
+        for i in range(self.last_level - self.first_level):
+            y.append(x_out[i].clone())
+        self.ida_up(y, 0, len(y))
+
+        return [y[-1]],pre_topk_int, repro_topk_int
+        
+class DLA_PlanACAT(BaseModelPlanA):
+    def __init__(self, num_layers, heads, head_convs, opt, K=28):
+        super(DLA_PlanACAT, self).__init__(
+            heads, head_convs, 1, 64 if num_layers == 34 else 128, opt=opt)
+        down_ratio=4
+        print("################## Plan A CAT Start! ######################")
+        self.opt = opt
+        self.node_type = DLA_NODE[opt.dla_node]
+        # print('Using node type:', self.node_type)
+        # print('this one')
+        self.first_level = int(np.log2(down_ratio))
+        self.last_level = 5
+        print('num_layers', num_layers)
+        self.base = globals()['dla{}'.format(num_layers)](
+            pretrained=(opt.load_model == ''), opt=opt)
+        
+        # print(self.base)
+        channels = self.base.channels
+        scales = [2 ** i for i in range(len(channels[self.first_level:]))]
+        channels_up = [i * 2 for i in channels]
+        self.dla_up = DLAUp(
+            self.first_level, channels_up[self.first_level:], scales,
+            node_type=self.node_type)
+        out_channel = channels_up[self.first_level]
+
+        self.ida_up = IDAUp(
+            out_channel, channels_up[self.first_level:self.last_level], 
+            [2 ** i for i in range(self.last_level - self.first_level)],
+            node_type=self.node_type)
+
+    def imgpre2feats(self, x, pre_img=None, pre_hm=None, repro_hm=None, pre_hm_cls = None, repro_hm_cls=None):
+        # 我决定在datasets中构建函数使得pre_hm转换为repro_hm，所以这里直接Input了
+        x_pre = self.base(pre_img=pre_img, pre_hm=pre_hm) # 得到一个6元素的list
+        x_cur = self.base(pre_img=x, pre_hm = repro_hm) #得到一个6元素的list
+        
+        # print("################## Plan A CAT Start! ######################")
+        x_out = []
+        assert len(x_pre) == len(x_cur)
+        # pre_topk_indices, repro_topk_indices, pre_topk_int, repro_topk_int = get_topk_pairs(pre_hm, repro_hm, self.K)
+        for i in range(len(x_cur)):
+            pre_features, cur_features = x_pre[i], x_cur[i]
+            out = torch.cat([pre_features, cur_features], dim=1)
+            # print(out.shape)
             x_out.append(out)
           
         x_out = self.dla_up(x_out)
@@ -967,9 +1177,92 @@ class DLA_PlanA(BaseModelPlanA):
             y.append(x_out[i].clone())
         self.ida_up(y, 0, len(y))
 
-        return [y[-1]]
+        return [y[-1]],None, None
+
+class DLA_PlanAWindow(BaseModelPlanA):
+    def __init__(self, num_layers, heads, head_convs, opt):
+        super(DLA_PlanAWindow, self).__init__(
+            heads, head_convs, 1, 64 if num_layers == 34 else 128, opt=opt)
+        down_ratio=4
+        print("################## Plan A Window Start! ######################")
+        self.opt = opt
+        self.node_type = DLA_NODE[opt.dla_node]
+        # print('Using node type:', self.node_type)
+        # print('this one')
+        self.first_level = int(np.log2(down_ratio))
+        self.last_level = 5
+        print('num_layers', num_layers)
+        self.base = globals()['dla{}'.format(num_layers)](
+            pretrained=(opt.load_model == ''), opt=opt)
         
+        # print(self.base)
+        channels = self.base.channels
+        scales = [2 ** i for i in range(len(channels[self.first_level:]))]
         
+        self.dla_up = DLAUp(
+            self.first_level, channels[self.first_level:], scales,
+            node_type=self.node_type)
+        out_channel = channels[self.first_level]
+
+        self.ida_up = IDAUp(
+            out_channel, channels[self.first_level:self.last_level], 
+            [2 ** i for i in range(self.last_level - self.first_level)],
+            node_type=self.node_type)
+        
+        self.K_list = [1, 1, 1]
+        self.kernel_list = [12, 6, 3]
+        # self.kernel_list = [3,3,3] 
+        self.scale_list = [4, 2, 1]
+        
+        self.transformer = nn.ModuleList(
+            [TransformerEncoder(
+                TransformerEncoderLayer(d_inp=16*(2**i), d_model=4*(2**i), n_k=7*self.K_list[i]*(1 + 2 * (self.kernel_list[i]//2))**2), num_layers=3
+                 ) for i in range(3)])
+        self.cat_layer = nn.ModuleList(
+            [nn.Sequential(nn.Linear(16*(2**(i+1)), 32*(2**(i+1))),
+                           nn.ReLU(),
+                           nn.Linear(32*(2**(i+1)), 16*(2**(i)))) for i in range(6)])
+                                      
+
+    def imgpre2feats(self, x, pre_img=None, pre_hm=None, repro_hm=None, pre_hm_cls = None, repro_hm_cls=None):
+        # 我决定在datasets中构建函数使得pre_hm转换为repro_hm，所以这里直接Input了
+        x_pre = self.base(pre_img=pre_img, pre_hm=pre_hm) # 得到一个6元素的list
+        x_cur = self.base(pre_img=x, pre_hm = repro_hm) #得到一个6元素的list
+#        x_out = self.base(x, pre_img, pre_hm)
+        
+        # print("################## Plan A Window Start! ######################")
+        x_out = []
+        assert len(x_pre) == len(x_cur)
+        for i in range(len(x_cur)):
+            pre_feats, cur_feats = x_pre[i], x_cur[i]
+            if i <= 2:
+                pre_topk_indices, repro_topk_indices = get_topk_index(pre_hm_cls, repro_hm_cls, self.K_list[i])  # B_hm x (C_hm * K) x 2
+                transformer = self.transformer[i]
+                pre_key, prev_batch_id, prev_feat_id = get_topk_features_scale(pre_feats, pre_topk_indices, scale_num=self.scale_list[i], kernel=self.kernel_list[i])
+                cur_query, cur_batch_id, cur_feat_id = get_topk_features_scale(cur_feats, repro_topk_indices, scale_num=self.scale_list[i], kernel=self.kernel_list[i])
+                out = transformer(cur_query, pre_key, pre_key)
+                out = substitute_topk_features_scale(out, cur_feats, cur_batch_id, cur_feat_id, self.cat_layer[i])
+                # print(out.shape)
+                assert out.shape == x_pre[i].shape
+                x_out.append(out)
+                # x_out.append(pre_feats+cur_feats)
+            else:
+                pre_f = pre_feats.permute(0, 2, 3, 1).contiguous()
+                cur_f = cur_feats.permute(0, 2, 3, 1).contiguous()
+                out = self.cat_layer[i](torch.cat([pre_f, cur_f], dim=-1))
+                out = out.permute(0, 3, 1, 2).contiguous()
+                assert out.shape == x_pre[i].shape
+                x_out.append(out)
+                # x_out.append(pre_feats+cur_feats)
+           #  x_out.append(pre_feats+cur_feats)
+          
+        x_out = self.dla_up(x_out)
+        y = []
+        for i in range(self.last_level - self.first_level):
+            y.append(x_out[i].clone())
+        self.ida_up(y, 0, len(y))
+
+        return [y[-1]], prev_feat_id, cur_feat_id
         
         
         

@@ -213,6 +213,7 @@ def get_pnp_keypoints(prev_kp_pos_gt, prev_kp_projs_gt, next_kp_pos_gt, camera_K
     count = 0
     prev_kp_pos_gt_list = []
     prev_kp_projs_noised = []
+    prev_kp_projs_noised_out = []
     for i in range(n_kp):
         ct = deepcopy(prev_kp_projs_gt[i].tolist())
         ct[0] = ct[0] + np.random.randn() * hm_disturb * 2 # hm_disturb是原来paper中的\lambda_jt
@@ -221,8 +222,11 @@ def get_pnp_keypoints(prev_kp_pos_gt, prev_kp_projs_gt, next_kp_pos_gt, camera_K
         if np.random.random() > lost_disturb:
             prev_kp_projs_noised.append(ct)
             prev_kp_pos_gt_list.append(prev_kp_pos_gt[i].tolist())
-
-    prev_kp_projs_noised_np = np.array(prev_kp_projs_noised)
+            prev_kp_projs_noised_out.append(ct)
+        else:
+            prev_kp_projs_noised_out.append([-999.999, -999.999])
+    
+    assert len(prev_kp_projs_noised_out) == prev_kp_pos_gt.shape[0]
     # prev_kp_projs_noised = prev_kp_projs_gt + np.random.randn((n_kp, dimen)) * 0.1 * 2
     
     pnp_retval, prev_translation, prev_quaternion = solve_pnp(
@@ -247,12 +251,12 @@ def get_pnp_keypoints(prev_kp_pos_gt, prev_kp_projs_gt, next_kp_pos_gt, camera_K
         next_kp_projs_est[:, 0] /= next_kp_projs_est[:, 2]
         next_kp_projs_est[:, 1] /= next_kp_projs_est[:, 2]
         
-        return True, next_kp_projs_est[:, :2], prev_kp_projs_noised_np
+        return True, next_kp_projs_est[:, :2], np.array(prev_kp_projs_noised_out)
         
     else:
         return None, None, None
     
-def is_pnp(prev_kp_pos_gt, prev_kp_projs_gt, next_kp_pos_gt, camera_K):
+def is_pnp(prev_kp_pos_gt, prev_kp_projs_gt, next_kp_pos_gt, prev_kp_projs_all, camera_K):
     pnp_retval, prev_translation, prev_quaternion = solve_pnp(
                 prev_kp_pos_gt, prev_kp_projs_gt, camera_K
             ) # prev_quaternion为xyzw
@@ -275,10 +279,11 @@ def is_pnp(prev_kp_pos_gt, prev_kp_projs_gt, next_kp_pos_gt, camera_K):
         next_kp_projs_est[:, 0] /= next_kp_projs_est[:, 2]
         next_kp_projs_est[:, 1] /= next_kp_projs_est[:, 2]
         
-        return next_kp_projs_est[:, :2]
+        return prev_kp_projs_all, next_kp_projs_est[:, :2]
         
     else:
-        return None
+#        return None, None
+        return prev_kp_projs_all, prev_kp_projs_all
     
     
     

@@ -731,8 +731,10 @@ class CenterTrackSeqDataset(TorchDataset):
         # 现在需要转换keypoints到output上，即在self.output_h, self.output_w上的keypoints\
         prev_kp_projs_raw_np = np.array(prev_keypoints["projections"], dtype=np.float32)
         next_kp_projs_raw_np = np.array(next_keypoints["projections"], dtype=np.float32)
-        prev_kp_projs_net_output_np = dream.utilities.affine_transform_and_clip(prev_kp_projs_raw_np, trans_output, self.output_w, self.output_h)
-        next_kp_projs_net_output_np = dream.utilities.affine_transform_and_clip(next_kp_projs_raw_np, trans_output, self.output_w, self.output_h)
+        prev_kp_projs_net_output_np = dream.utilities.affine_transform_and_clip(prev_kp_projs_raw_np, trans_output, self.output_w, self.output_h,\
+        width, height)
+        next_kp_projs_net_output_np = dream.utilities.affine_transform_and_clip(next_kp_projs_raw_np, trans_output, self.output_w, self.output_h,\
+        width, height)
         
         # Convert keypoint data to tensors -use float32 size 
         prev_keypoint_positions_wrt_cam_as_tensor = torch.from_numpy(
@@ -790,15 +792,17 @@ class CenterTrackSeqDataset(TorchDataset):
 #            prev_belief_maps = dream.utilities.get_hm(prev_kp_projs_net_output_np, self.output_w, self.output_h)
 #            prev_belief_maps_as_tensor = torch.from_numpy(prev_belief_maps).float()
 #            sample["prev_belief_maps"] = prev_belief_maps_as_tensor
-#            
-            prev_origin_maps_as_whole_np = dream.utilities.get_prev_hm(prev_kp_projs_raw_np, trans_input,self.input_w, self.input_h, hm_disturb = self.opt.hm_disturb, lost_disturb=self.opt.lost_disturb) 
+#           
+            # print('width', width)
+            # print('height', height)
+            prev_origin_maps_as_whole_np = dream.utilities.get_prev_hm(prev_kp_projs_raw_np, trans_input,self.input_w, self.input_h, width, height, hm_disturb = self.opt.hm_disturb, lost_disturb=self.opt.lost_disturb) 
             prev_origin_maps_as_whole_as_tensor = torch.from_numpy(prev_origin_maps_as_whole_np).float()
             sample["prev_origin_belief_maps"] = prev_origin_maps_as_whole_as_tensor
             
             # print('next_kp_projs_net_output_as_tensor', next_kp_projs_net_output_as_tensor)
             # print('next_kp_projs_net_output_int_np', next_kp_projs_net_output_int_np)
             # next_belief_maps = dream.utilities.get_hm(next_kp_projs_net_output_int_np, self.output_w, self.output_h)
-            next_belief_maps = dream.utilities.get_hm(next_kp_projs_net_output_np, self.output_w, self.output_h)
+            next_belief_maps = dream.utilities.get_hm(next_kp_projs_net_output_int_np, self.output_w, self.output_h)
             next_belief_maps_as_tensor = torch.from_numpy(next_belief_maps).float()
             sample["next_belief_maps"] = next_belief_maps_as_tensor
             
@@ -816,14 +820,23 @@ class CenterTrackSeqDataset(TorchDataset):
 #                print('All seqs', self.seq_count_all)
 #                print('Curent black ratio (percent)', self.black_count / self.seq_count_all * 100)
             
-            prev_belief_maps_as_whole_np = dream.utilities.get_prev_hm_wo_noise(prev_kp_projs_noised_np, trans_input, self.input_w, self.input_h)
+            prev_belief_maps_as_whole_np = dream.utilities.get_prev_hm_wo_noise(prev_kp_projs_noised_np, trans_input, self.input_w, self.input_h, \
+            width, height)
             prev_belief_maps_as_whole_as_tensor = torch.from_numpy(prev_belief_maps_as_whole_np).float()
             sample["prev_belief_maps"] = prev_belief_maps_as_whole_as_tensor
             
-            repro_belief_maps_as_whole_np = dream.utilities.get_prev_hm_wo_noise(next_kp_projs_est, trans_input,self.input_w, self.input_h)  
+            repro_belief_maps_as_whole_np = dream.utilities.get_prev_hm_wo_noise(next_kp_projs_est, trans_input,self.input_w, self.input_h, \
+            width, height)  
             repro_belief_maps_as_whole_as_tensor = torch.from_numpy(repro_belief_maps_as_whole_np).float()
             sample["repro_belief_maps"] = repro_belief_maps_as_whole_as_tensor
-
+            
+            prev_belief_maps_cls_np = dream.utilities.get_prev_hm_wo_noise_cls(prev_kp_projs_noised_np, prev_kp_pos_gt_np, trans_output, self.output_w,self.output_h,width, height)
+            prev_belief_maps_cls_as_tensor = torch.from_numpy(prev_belief_maps_cls_np).float()
+            sample["prev_belief_maps_cls"] = prev_belief_maps_cls_as_tensor
+            
+            repro_belief_maps_cls_np = dream.utilities.get_prev_hm_wo_noise_cls(next_kp_projs_est, next_kp_pos_gt_np, trans_output, self.output_w, self.output_h, width, height)
+            repro_belief_maps_cls_as_tensor = torch.from_numpy(repro_belief_maps_cls_np).float()
+            sample["repro_belief_maps_cls"] = repro_belief_maps_cls_as_tensor
  
         return sample
 

@@ -24,16 +24,18 @@ from PIL import Image
 from .model.model import create_model, load_model, create_dream_hourglass
 from .model.decode import dream_generic_decode
 from .model.utils import flip_tensor, flip_lr_off, flip_lr
-from .utils.image import get_affine_transform, affine_transform
+from .utils.image import get_affine_transform, affine_transform, transform_preds_with_trans
 from .utils.image import dream_draw_umich_gaussian, gaussian_radius
 from .utils.post_process import dream_generic_post_process
 from .utils.debugger import Debugger
 from .utils.tracker import Tracker
 from .dataset.dataset_factory import get_dataset
 import dream_geo as dream
+#import numba
+#from numba import jit
 
 class DreamDetector(object):
-    def __init__(self, opt,keypoint_names, is_real, is_ct):
+    def __init__(self, opt,keypoint_names, is_real, is_ct, idx=None):
         if opt.gpus[0] >= 0:
             opt.device = torch.device("cuda")
         else:
@@ -51,9 +53,12 @@ class DreamDetector(object):
         self.model.eval()
         
         self.opt = opt
-        self.mean = np.array([0.5, 0.5, 0.5], dtype=np.float32).reshape(1, 1, 3)
-        self.std = np.array([0.5, 0.5, 0.5], dtype=np.float32).reshape(1, 1, 3)
+#        self.mean = np.array([0.5, 0.5, 0.5], dtype=np.float32).reshape(1, 1, 3)
+#        self.std = np.array([0.5, 0.5, 0.5], dtype=np.float32).reshape(1, 1, 3)
+        self.mean = torch.tensor([0.5, 0.5, 0.5], dtype=torch.float32).reshape(1, 1, 3)
+        self.std = torch.tensor([0.5, 0.5, 0.5], dtype=torch.float32).reshape(1, 1, 3)
         self.pause = not opt.no_pause
+        self.idx = idx
         self.rest_focal_length =  self.opt.test_focal_length
         # self.flip_idx = self.trained_dataset.flip_idx
         self.cnt = 0
@@ -65,7 +70,7 @@ class DreamDetector(object):
         self.phase = opt.phase
         self.dataset_path = "/root/autodl-tmp/dream_data/data/real"
         # self.output_dir = output_dir.split('/')[-2]
-        # self.output_dir = f"/mnt/data/Dream_ty/Dream_model/ct_infer_img/pics_0903/{self.output_dir}"
+        self.output_dir = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/ct_infer_img/"
         
         # self.output_dir = output_dir.split('/')[-1][:6]
         # self.output_dir = f"/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/ct_infer_img/real/{output_dir}"
@@ -106,7 +111,7 @@ class DreamDetector(object):
         return camera_K
         
     
-    def run(self, image_or_path_or_tensor, i, json_path, meta={}, is_final=False):
+    def run(self, image_or_path_or_tensor, i, json_path, meta={}, is_final=False, save_dir=None):
         load_time, pre_time, net_time, dec_time, post_time = 0, 0, 0, 0, 0
         merge_time, track_time, tot_time, display_time = 0, 0, 0, 0
         # self.debugger.clear()
@@ -137,7 +142,10 @@ class DreamDetector(object):
             if not pre_processed:
                 # not prefetch testing or demo
                 # 因为我们的未预处理过，所以会先调用pre_process函数
-                images, meta = self.pre_process(image, scale, meta)
+#                n1 = time.time()
+                images, meta = self.pre_process(image, scale, meta, i)
+#                n2 = time.time()
+#                print("n2 - n1", n2 - n1)
             else:
                 # prefetch testing
                 images = pre_processed_images['images'][scale][0]
@@ -147,16 +155,18 @@ class DreamDetector(object):
                     meta['pre_dets'] = pre_processed_images['meta']['pre_dets']
                 if 'cur_dets' in pre_processed_images['meta']:
                     meta['cur_dets'] = pre_processed_images['meta']['cur_dets']
-          
+            
+            # pre_img_time = time.time()
+            # print("pre_process time", pre_img_time - scale_start_time)
             images = images.to(self.opt.device, non_blocking=self.opt.non_block_test)
-        
+#            print("preprocess check", time.time() - scale_start_time)
             # initializing tracker
             pre_hms, pre_inds = None, None
             if self.opt.tracking:
                 # initialize the first frame
                 if self.pre_images is None:
                     print('Initialize tracking!')
-                    self.pre_images = images
+                    self.pre_images = images ### 这里注意一下！！！
                     self.tracker.init_track(
                         meta['pre_dets'] if 'pre_dets' in meta else [])
                 if self.opt.pre_hm:
@@ -170,23 +180,28 @@ class DreamDetector(object):
 #                        self.tracker.tracks, meta, with_hm=not self.opt.zero_pre_hm)
 #                        continue
                     if i == 1:
-                        pre_hms, repro_hms, pre_inds = self._get_additional_inputs(
-                        self.tracker.tracks, meta, with_hm=not self.opt.zero_pre_hm)
-                        #pre_hms, _ = self._get_initial_gt_inputs(json_path, meta)
+                        pre_hms, repro_hms, pre_hms_cls, repro_hms_cls, pre_inds = self._get_additional_inputs(
+                        self.tracker.tracks, meta, with_hm=not self.opt.zero_pre_hm) 
+#                        _, _,_, _, pre_inds =  self._get_additional_inputs(
+#                        self.tracker.tracks, meta, with_hm=not self.opt.zero_pre_hm)
+#                        pre_hms, repro_hms, pre_hms_cls, repro_hms_cls = self._get_initial_gt_inputs(json_path, meta)
                     else:
-                        _, _, pre_inds = self._get_additional_inputs(
+#                        m1 = time.time()
+                        _, _, _, _, pre_inds = self._get_additional_inputs(
                         self.tracker.tracks, meta, with_hm=not self.opt.zero_pre_hm)
                         if self.is_real:
-                            pre_hms, repro_hms = self._get_further_dt_pnp_inputs_real(self.detected_kps, meta, self.pre_json_path, json_path)
+                            pre_hms, repro_hms, pre_hms_cls, repro_hms_cls = self._get_further_dt_pnp_inputs_real(self.detected_kps, meta, self.pre_json_path, json_path)
                             if self.phase == "CenterTrack":
 #                                print('!!!!')
 #                                print("CenterTrack")
                                 pre_hms = self._get_further_dt_inputs(self.detected_kps, meta)
                             # pre_hms = self._get_further_dt_inputs(self.detected_kps, meta, with_hm=True, sigma=2)
                         else:
-                            pre_hms, repro_hms = self._get_further_dt_pnp_inputs(self.detected_kps, meta, self.pre_json_path, json_path)
+                            pre_hms, repro_hms, pre_hms_cls, repro_hms_cls = self._get_further_dt_pnp_inputs(self.detected_kps, meta, self.pre_json_path, json_path)
                             if self.phase == "CenterTrack":
                                 pre_hms = self._get_further_dt_inputs(self.detected_kps, meta)
+#                        m2 = time.time()
+#                        print("m2 - m1", m2 - m1)
 #                                print('!!!!')
 #                                print("CenterTrack")
                             # pre_hms = self._get_further_dt_inputs(self.detected_kps, meta, with_hm=True, sigma=2)
@@ -207,23 +222,30 @@ class DreamDetector(object):
                                    
             pre_process_time = time.time()
             pre_time += pre_process_time - scale_start_time
+            # print("get_hm_time", pre_process_time - pre_img_time)
             
             # Visualize heatmaps for debugging
 #            pre_hm_to_img = dream.image_proc.image_from_belief_map(pre_hms[0][0])
 #            self.exists_or_mkdir(self.output_dir)
 #            pre_hm_to_img.save(os.path.join(self.output_dir, "{}_pre_hm.png".format(i)))
-#            self.next_belief_map_path = os.path.join(self.output_dir, "next_belief", "")
+#            self.next_belief_map_path = os.path.join(self.output_dir, f"next_belief_{self.idx}", "")
 #            self.exists_or_mkdir(self.next_belief_map_path)
 #            s = str(i).zfill(5)
 #            self.next_belief_map_path = self.next_belief_map_path + f"{s}.png"
+            
+#            pre_hm_to_img = dream.image_proc.image_from_belief_map(pre_hms[0][0])
+#            # self.exists_or_mkdir(self.output_dir)
+#            pre_hm_to_img.save(self.next_belief_map_path + f"{s}_prehm_img.png")
 #           
 #            if i > 0:
 #                pre_gt_hm_to_img = dream.image_proc.image_from_belief_map(pre_gt_hms[0][0]) 
 #                pre_gt_hm_to_img.save(os.path.join(self.output_dir, "{}_pre_gt.png".format(i)))
 ###            print('images.shape', images.shape)
 ###            print('images.dtype', images.dtype)
-#            prev_images_to_img = dream.image_proc.image_from_tensor(self.pre_images[0])
-#            prev_images_to_img.save(os.path.join(self.output_dir, "{}_init_gt_img.png".format(i)))
+
+#            prev_images_to_img = dream.image_proc.image_from_tensor(images[0])
+#            prev_images_to_img.save(self.next_belief_map_path + f"{s}_img.png")
+            
 ###            # print('shape', self.pre_images[0].shape)
 #            prev_images_to_img_norm = dream.image_proc.image_from_tensor(self.pre_images[0]/225)
 #            output_dirs = {head : os.path.join(self.output_dir, f"{head}_overlay") for head in ["whole", "gt", "dt"]}
@@ -234,8 +256,10 @@ class DreamDetector(object):
             # run the network
             # output: the output feature maps, only used for visualizing
             # dets: output tensors after extracting peaks
-            output, dets, forward_time = self.process(
-              images, self.pre_images, pre_hms, repro_hms, pre_inds, return_time=True)
+            output, dets, forward_time, hms = self.process(
+              images, self.pre_images, pre_hms, repro_hms, pre_inds, return_time=True, pre_hms_cls=pre_hms_cls, repro_hms_cls=repro_hms_cls)
+            
+            # topk_inp_coords = output["pre_hm_topk_ind"]
             net_time += forward_time - pre_process_time
             decode_time = time.time()
             dec_time += decode_time - forward_time
@@ -278,11 +302,16 @@ class DreamDetector(object):
             # add tracking id to results
             results = self.tracker.step(results, public_det)
             self.pre_images = images
+            # self.pre_image = Image.fromarray(np.uint8(image)) 
+
+
 
         tracking_time = time.time()
         track_time += tracking_time - end_time
         tot_time += tracking_time - start_time
-
+        # save_dir = "/root/autodl-tmp/camera_to_robot_pose/topk_check/"
+#        topk_inp_coords = self.transform_topk_coords_to_input(topk_inp_coords, meta)
+#        self._get_heatmap_and_topk(topk_inp_coords, pre_hms, save_dir, i)
         # if self.opt.debug >= 1:
         #     self.show_results(self.debugger, image, results)
         self.cnt += 1
@@ -304,16 +333,15 @@ class DreamDetector(object):
                 
         self.detected_kps = self._get_final_kps(results)
         self.pre_json_path = json_path
-#        self._get_overlay_imgs(prev_images_to_img_norm, self.detected_kps, json_path, meta, output_dirs, i)
-#        self.detected_kps_output = self._get_final_kps_output(results)
-#        self._get_overlay_output_imgs(self.detected_kps_output, meta, json_path, output_dirs, i) 
-        # print('detected_kps', self.detected_kps)
-        # print('meta', meta)
-        # print('shape', prev_images_to_img_norm.size) 
         
+#        print("detected_kps", self.detected_kps)
         
+#        output_dirs = {head : os.path.join(self.output_dir, f"{self.is_real}_{head}_overlay") for head in ["whole", "gt", "dt"]}
+#        next_img_PIL = Image.fromarray(np.uint8(image))
+#        self._get_overlay_imgs(hms, next_img_PIL, self.detected_kps, self.pre_json_path, meta, output_dirs, i)        
 
         return ret, self.detected_kps
+
     
     def _transform_scale(self, image, scale=1):
       '''
@@ -321,6 +349,7 @@ class DreamDetector(object):
           Currently support: fix short size/ center crop to a fixed size/ 
           keep original resolution but pad to a multiplication of 32
       '''
+      # print("image.shape", image.shape)
       height, width = image.shape[0:2]
       new_height = int(height * scale)
       new_width  = int(width * scale)
@@ -346,31 +375,52 @@ class DreamDetector(object):
       resized_image = cv2.resize(image, (new_width, new_height))
       return resized_image, c, s, inp_width, inp_height, height, width
   
-    def pre_process(self, image, scale, input_meta={}):
+#    @jit(nopython=True)
+    def pre_process(self, image, scale, input_meta={}, i=None):
       '''
       Crop, resize, and normalize image. Gather meta data for post processing 
         and tracking.
       '''
-      resized_image, c, s, inp_width, inp_height, height, width = \
-        self._transform_scale(image)
+      #t1 = time.time()
+      resized_image, c, s, inp_width, inp_height, height, width = self._transform_scale(image)
       trans_input = get_affine_transform(c, s, 0, [inp_width, inp_height])
       out_height =  inp_height // self.opt.down_ratio
       out_width =  inp_width // self.opt.down_ratio
       trans_output = get_affine_transform(c, s, 0, [out_width, out_height])
-      
+      #t2 = time.time()
+      #print("t2 - t1", t2 - t1)
       # print('trans_input', trans_input)
       # print('trans_output', trans_output)
       
+      scale_ratio = inp_width / width
+      new_resized_image = cv2.resize(resized_image, (int(width * scale_ratio), int(height * scale_ratio)))
+      #t3 = time.time()
+      #print("t3 - t2", t3 - t2)
+      inp_image = np.zeros((inp_height, inp_width, 3))
+      gap = int((inp_height - scale_ratio * height) / 2)
       
-      inp_image = cv2.warpAffine(
-        resized_image, trans_input, (inp_width, inp_height),
-        flags=cv2.INTER_LINEAR)
-      inp_image = ((inp_image / 255. - self.mean) / self.std).astype(np.float32)
+      inp_image[gap:-gap, :, :] = new_resized_image
+      #t33 = time.time()
+      #print("t33 - t3", t33 - t3)
 
-      images = inp_image.transpose(2, 0, 1).reshape(1, 3, inp_height, inp_width)
-      if self.opt.flip_test:
-        images = np.concatenate((images, images[:, :, :, ::-1]), axis=0)
-      images = torch.from_numpy(images)
+#      inp_image = cv2.warpAffine(
+#        resized_image, trans_input, (inp_width, inp_height),
+#        flags=cv2.INTER_LINEAR)
+      inp_image = torch.from_numpy(inp_image)
+      inp_image = self.normalize_img(inp_image, self.mean, self.std) 
+      #t333 = time.time()
+      #print("t333 - t33", t333 - t33)
+#      norm_dir = os.path.join(self.output_dir, self.is_real + "_norm", str(self.idx))
+#      self.exists_or_mkdir(norm_dir)
+#      normalized_image = Image.fromarray(np.uint8(inp_image * 255))
+#      normalized_image.save(os.path.join(norm_dir, f"{str(i).zfill(4)}_norm.png"))
+#      
+      
+      images = inp_image.permute(2, 0, 1).view(1, 3, inp_height, inp_width)
+      
+      #t4 = time.time()
+      #print('t4 - t333', t4 - t333)
+      
       meta = {'calib': np.array(input_meta['calib'], dtype=np.float32) \
                if 'calib' in input_meta else \
                self._get_default_calib(width, height)}
@@ -382,7 +432,13 @@ class DreamDetector(object):
         meta['pre_dets'] = input_meta['pre_dets']
       if 'cur_dets' in input_meta:
         meta['cur_dets'] = input_meta['cur_dets']
+        
+      #t5 = time.time()
+      #print('t5 - t4', t5 - t4)
       return images, meta
+   
+    def normalize_img(self, img, mean, std):
+        return ((img / 255. - mean) / std).type(torch.float32)
    
     def _trans_bbox(self, bbox, trans, width, height):
       '''
@@ -400,11 +456,14 @@ class DreamDetector(object):
       Render input heatmap from previous trackings.
       '''
       # 这里是需要改掉的，因为我们没有bbox
+      # t000 = time.time()
       trans_input, trans_output = meta['trans_input'], meta['trans_output']
       inp_width, inp_height = meta['inp_width'], meta['inp_height']
       out_width, out_height = meta['out_width'], meta['out_height']
       input_hm = np.zeros((1, inp_height, inp_width), dtype=np.float32) 
       repro_hm = np.zeros((1, inp_height, inp_width), dtype=np.float32)
+      pre_hm_cls = torch.zeros(1, 7, out_height, out_width)
+      repro_hm_cls = torch.zeros(1, 7, out_height, out_width)
 
       output_inds = []
       for det in dets:
@@ -438,7 +497,9 @@ class DreamDetector(object):
           repro_hm = torch.from_numpy(repro_hm).to(self.opt.device)
       output_inds = np.array(output_inds, np.int64).reshape(1, -1)
       output_inds = torch.from_numpy(output_inds).to(self.opt.device)
-      return input_hm, repro_hm, output_inds
+      # t00 = time.time()
+      # print("t00 - t000", t00-t000)
+      return input_hm, repro_hm,  pre_hm_cls.to(self.opt.device), repro_hm_cls.to(self.opt.device),  output_inds
 
     def _get_further_dt_pnp_inputs(self, kps_detected_raw_np, meta, prev_json, json):
         trans_input, trans_output = meta['trans_input'], meta['trans_output']
@@ -460,6 +521,7 @@ class DreamDetector(object):
         next_keypoints = dream.utilities.load_seq_keypoints(json, object_name, keypoint_names)
         prev_x3d_np = np.array(deepcopy(prev_keypoints["positions_wrt_robot"]))
         next_x3d_np = np.array(deepcopy(next_keypoints["positions_wrt_robot"]))
+        n_kp, _ = prev_x3d_np.shape
         
         # print('kps_detected_raw_np', kps_detected_raw_np)
         idx_good_detections = np.where(kps_detected_raw_np > -999.999 * 4)
@@ -472,29 +534,50 @@ class DreamDetector(object):
         # print('kps_raw_list', kps_raw_list)
         if kps_raw_list == []:
             # print('empty!')
-            return torch.zeros(1, 1, inp_height, inp_width).to(self.opt.device), torch.zeros(1, 1, inp_height, inp_width).to(self.opt.device)
+            return torch.zeros(1, 1, inp_height, inp_width).to(self.opt.device), torch.zeros(1, 1, inp_height, inp_width).to(self.opt.device), \
+                    torch.zeros(1, n_kp, out_height, out_width).to(self.opt.device), torch.zeros(1, n_kp, out_height, out_width).to(self.opt.device)
         
         
-        next_kp_projs_est = dream.geometric_vision.is_pnp(np.array(pre_x3d_list), np.array(kps_raw_list), next_x3d_np, self.camera_K)
+        prev_kp_projs_dt, next_kp_projs_est = dream.geometric_vision.is_pnp(np.array(pre_x3d_list), np.array(kps_raw_list), next_x3d_np,\
+                                              kps_detected_raw_np,  self.camera_K)
         
-        pre_hm = dream.utilities.get_prev_hm_wo_noise(kps_raw_np, trans_input, inp_width, inp_height)
+        # print('width', meta['width'])
+        # print('height', meta['height'])
+        pre_hm = dream.utilities.get_prev_hm_wo_noise(prev_kp_projs_dt, trans_input, inp_width, inp_height, meta['width'], meta['height'])
+        # pre_hm = dream.utilities.get_prev_hm_wo_noise_old(kps_raw_np, trans_input, inp_width, inp_height)
         pre_hm = torch.from_numpy(pre_hm).view(1, 1, inp_height, inp_width)
-        repro_hm = dream.utilities.get_prev_hm_wo_noise(next_kp_projs_est, trans_input,inp_width, inp_height)
+        repro_hm = dream.utilities.get_prev_hm_wo_noise(next_kp_projs_est, trans_input,inp_width, inp_height, meta['width'], meta['height'])
+        # repro_hm = dream.utilities.get_prev_hm_wo_noise_old(next_kp_projs_est, trans_input,inp_width, inp_height)
         repro_hm = torch.from_numpy(repro_hm).view(1, 1, inp_height, inp_width)
-        return pre_hm.to(self.opt.device), repro_hm.to(self.opt.device)
+        
+        pre_hm_clses = dream.utilities.get_prev_hm_wo_noise_cls(prev_kp_projs_dt, prev_x3d_np, trans_output, out_width, out_height, meta['width'], meta['height'])
+        pre_hm_clses = torch.from_numpy(pre_hm_clses).view(1, -1, out_height, out_width)
+        repro_hm_clses = dream.utilities.get_prev_hm_wo_noise_cls(next_kp_projs_est, next_x3d_np, trans_output, out_width, out_height, meta['width'], meta['height'])
+        repro_hm_clses = torch.from_numpy(repro_hm_clses).view(1, -1, out_height, out_width)
+        
+        
+        return pre_hm.to(self.opt.device), repro_hm.to(self.opt.device), pre_hm_clses.to(self.opt.device), repro_hm_clses.to(self.opt.device)
     
     def _get_further_dt_pnp_inputs_real(self, kps_detected_raw_np, meta, prev_json, json):
+        
         trans_input, trans_output = meta['trans_input'], meta['trans_output']
         inp_width, inp_height = meta['inp_width'], meta['inp_height']
         out_width, out_height = meta['out_width'], meta['out_height']
         
         keypoint_names = ["panda_link0", "panda_link2", "panda_link3", "panda_link4", "panda_link6", "panda_link7", "panda_hand"]
         object_name = "panda"
+        # t1 = time.time()
+#        prev_keypoints = dream.utilities.load_keypoints(prev_json, object_name, keypoint_names)
+#        next_keypoints = dream.utilities.load_keypoints(json, object_name, keypoint_names)
+#        prev_x3d_np = np.array(prev_keypoints["positions_wrt_cam"])
+#        next_x3d_np = np.array(next_keypoints["positions_wrt_cam"])
+        # t2 = time.time()
+        prev_x3d_np = np.ones((7, 3))
+        next_x3d_np = np.ones((7, 3))
+        # print("t2 - t1", t2 - t1)
         
-        prev_keypoints = dream.utilities.load_keypoints(prev_json, object_name, keypoint_names)
-        next_keypoints = dream.utilities.load_keypoints(json, object_name, keypoint_names)
-        prev_x3d_np = np.array(deepcopy(prev_keypoints["positions_wrt_cam"]))
-        next_x3d_np = np.array(deepcopy(next_keypoints["positions_wrt_cam"]))
+        n_kp, _ = prev_x3d_np.shape
+        # print("n_kp" , n_kp)
         
         # print('kps_detected_raw_np', kps_detected_raw_np)
         idx_good_detections = np.where(kps_detected_raw_np > -999.999 * 4)
@@ -502,21 +585,39 @@ class DreamDetector(object):
         pre_x3d_list = prev_x3d_np[idx_good_detections_rows, :].tolist()
         kps_raw_list = kps_detected_raw_np[idx_good_detections_rows, :].tolist()
         kps_raw_np = np.array(kps_raw_list)
+        # t3 = time.time()
+        # print("t3 - t2", t3 - t2)
             # next_x3d_list.append(next_x3d) 
          
         # print('kps_raw_list', kps_raw_list)
         if kps_raw_list == []:
             # print('empty!')
-            return torch.zeros(1, 1, inp_height, inp_width).to(self.opt.device), torch.zeros(1, 1, inp_height, inp_width).to(self.opt.device)
+            return torch.zeros(1, 1, inp_height, inp_width).to(self.opt.device), torch.zeros(1, 1, inp_height, inp_width).to(self.opt.device), \
+                    torch.zeros(1, n_kp, out_height, out_width).to(self.opt.device), torch.zeros(1, n_kp, out_height, out_width).to(self.opt.device)
         
         
-        next_kp_projs_est = dream.geometric_vision.is_pnp(np.array(pre_x3d_list), np.array(kps_raw_list), next_x3d_np, self.camera_K)
+        prev_kp_projs_dt, next_kp_projs_est = dream.geometric_vision.is_pnp(np.array(pre_x3d_list), np.array(kps_raw_list), next_x3d_np, \
+                                            kps_detected_raw_np, self.camera_K)
         
-        pre_hm = dream.utilities.get_prev_hm_wo_noise(kps_raw_np, trans_input, inp_width, inp_height)
+        # t4 = time.time()
+        # print("t4 - t3", t4 - t3)
+        
+        pre_hm = dream.utilities.get_prev_hm_wo_noise(prev_kp_projs_dt, trans_input, inp_width, inp_height, meta['width'], meta['height'])
+        # pre_hm = dream.utilities.get_prev_hm_wo_noise_old(kps_raw_np, trans_input, inp_width, inp_height)
         pre_hm = torch.from_numpy(pre_hm).view(1, 1, inp_height, inp_width)
-        repro_hm = dream.utilities.get_prev_hm_wo_noise(next_kp_projs_est, trans_input,inp_width, inp_height)
+        repro_hm = dream.utilities.get_prev_hm_wo_noise(next_kp_projs_est, trans_input,inp_width, inp_height, meta['width'], meta['height'])
+        # repro_hm = dream.utilities.get_prev_hm_wo_noise_old(next_kp_projs_est, trans_input,inp_width, inp_height)
         repro_hm = torch.from_numpy(repro_hm).view(1, 1, inp_height, inp_width)
-        return pre_hm.to(self.opt.device), repro_hm.to(self.opt.device)
+        
+        pre_hm_clses = dream.utilities.get_prev_hm_wo_noise_cls(prev_kp_projs_dt, prev_x3d_np, trans_output, out_width, out_height, meta['width'], meta['height'])
+        pre_hm_clses = torch.from_numpy(pre_hm_clses).view(1, -1, out_height, out_width)
+        repro_hm_clses = dream.utilities.get_prev_hm_wo_noise_cls(next_kp_projs_est, next_x3d_np, trans_output, out_width, out_height, meta['width'], meta['height'])
+        repro_hm_clses = torch.from_numpy(repro_hm_clses).view(1, -1, out_height, out_width)
+        
+        # t5 = time.time()
+        # print("t5 - t4", t5 - t4) 
+        
+        return pre_hm.to(self.opt.device), repro_hm.to(self.opt.device), pre_hm_clses.to(self.opt.device), repro_hm_clses.to(self.opt.device)
         
 
     def _get_further_dt_inputs(self, kps_detected_raw_np, meta,):
@@ -534,7 +635,8 @@ class DreamDetector(object):
           # print('empty!')
           return torch.zeros(1, 1, inp_height, inp_width).to(self.opt.device)
       kps_raw_np = np.array(kps_raw_list)
-      pre_hm = dream.utilities.get_prev_hm_wo_noise(kps_raw_np, trans_input, inp_width, inp_height)
+      pre_hm = dream.utilities.get_prev_hm_wo_noise(kps_raw_np, trans_input, inp_width, inp_height, meta['width'], meta['height'])
+      # pre_hm = dream.utilities.get_prev_hm_wo_noise_old(kps_raw_np, trans_input, inp_width, inp_height)
       pre_hm = torch.from_numpy(pre_hm).view(1, 1, inp_height, inp_width)
       return pre_hm.to(self.opt.device)
       
@@ -587,37 +689,50 @@ class DreamDetector(object):
       input_hm = np.zeros((1, inp_height, inp_width), dtype=np.float32) 
       output_inds = []
       parser = YAML(typ="safe")
-      with open(json_path, "r") as f:
-          data = parser.load(f.read().replace('\t', ' '))
-      data = data[0]
-      object_keypoints = data["keypoints"]
-      gt_kps_raw = []
-      for idx, kp_name in enumerate(self.keypoint_names):
-          gt_kps_raw.append(object_keypoints[idx]["projected_location"])
+      keypoint_names = ["panda_link0", "panda_link2", "panda_link3", "panda_link4", "panda_link6", "panda_link7", "panda_hand"]
+      object_name = "panda"
+        
+      prev_keypoints = dream.utilities.load_keypoints(json_path, object_name, keypoint_names)
+      prev_x3d_np = np.array(deepcopy(prev_keypoints["positions_wrt_cam"]))
+      gt_kps_raw_np = np.array(prev_keypoints["projections"])
           
-      gt_kps_raw = dream.image_proc.convert_keypoints_to_netin_from_raw(
-      gt_kps_raw, (640, 360), (self.opt.input_w, self.opt.input_h), "shrink-and-crop")
+        
+      # pre_hm = dream.utilities.get_prev_hm_wo_noise(gt_kps_raw_np, trans_input, inp_width, inp_height, meta['width'], meta['height'])
+      pre_hm = dream.utilities.get_prev_hm_wo_noise_old(gt_kps_raw_np, trans_input, inp_width, inp_height)
+      pre_hm = torch.from_numpy(pre_hm).view(1, 1, inp_height, inp_width)
+      # repro_hm = dream.utilities.get_prev_hm_wo_noise(next_kp_projs_est, trans_input,inp_width, inp_height, meta['width'], meta['height'])
+      repro_hm = pre_hm.clone()
       
-      for gt_kp_raw in gt_kps_raw:
-          ct_det = affine_transform(gt_kp_raw, trans_input)
-          ct_det[0] = np.clip(ct_det[0], 0, inp_width-1)
-          ct_det[1] = np.clip(ct_det[1], 0, inp_height-1)
+      pre_hm_clses = dream.utilities.get_prev_hm_wo_noise_cls(gt_kps_raw_np, prev_x3d_np, trans_output, out_width, out_height, meta['width'], meta['height'])
+      pre_hm_clses = torch.from_numpy(pre_hm_clses).view(1, -1, out_height, out_width)
+      repro_hm_clses = dream.utilities.get_prev_hm_wo_noise_cls(gt_kps_raw_np, prev_x3d_np, trans_output, out_width, out_height, meta['width'], meta['height'])
+      repro_hm_clses = torch.from_numpy(repro_hm_clses).view(1, -1, out_height, out_width)
+      
+      return pre_hm.to(self.opt.device), repro_hm.to(self.opt.device), pre_hm_clses.to(self.opt.device), repro_hm_clses.to(self.opt.device)
           
-          radius = 4
-          ct = np.array(
-          [ct_det[0], ct_det[1]], dtype=np.float32)
-          if with_hm:
-              dream_draw_umich_gaussian(input_hm[0], ct, radius)
-
-      if with_hm:
-          input_hm = input_hm[np.newaxis]
-          if self.opt.flip_test:
-            input_hm = np.concatenate((input_hm, input_hm[:, :, :, ::-1]), axis=0)
-          input_hm = torch.from_numpy(input_hm).to(self.opt.device)
+#      gt_kps_raw = dream.image_proc.convert_keypoints_to_netin_from_raw(
+#      gt_kps_raw, (640, 360), (self.opt.input_w, self.opt.input_h), "shrink-and-crop")
       
-      output_inds = np.array(output_inds, np.int64).reshape(1, -1)
-      output_inds = torch.from_numpy(output_inds).to(self.opt.device)
-      return input_hm, output_inds
+#      for gt_kp_raw in gt_kps_raw:
+#          ct_det = affine_transform(gt_kp_raw, trans_input)
+#          ct_det[0] = np.clip(ct_det[0], 0, inp_width-1)
+#          ct_det[1] = np.clip(ct_det[1], 0, inp_height-1)
+#          
+#          radius = 4
+#          ct = np.array(
+#          [ct_det[0], ct_det[1]], dtype=np.float32)
+#          if with_hm:
+#              dream_draw_umich_gaussian(input_hm[0], ct, radius)
+#
+#      if with_hm:
+#          input_hm = input_hm[np.newaxis]
+#          if self.opt.flip_test:
+#            input_hm = np.concatenate((input_hm, input_hm[:, :, :, ::-1]), axis=0)
+#          input_hm = torch.from_numpy(input_hm).to(self.opt.device)
+#      
+#      output_inds = np.array(output_inds, np.int64).reshape(1, -1)
+#      output_inds = torch.from_numpy(output_inds).to(self.opt.device)
+#      return input_hm, output_inds
 
     def _get_final_kps(self, dets):
       '''
@@ -625,6 +740,7 @@ class DreamDetector(object):
       '''
       dets = deepcopy(dets)
       detected_kps = np.full((self.opt.num_classes, 2), -999.999 * 4) 
+      # print('detected_kps', detected_kps)
       cls = {}
       for i in range(1, self.opt.num_classes + 1):
           cls[i] = {"x" : [], "y":[]}
@@ -725,103 +841,104 @@ class DreamDetector(object):
                           [0, 0, 1, 0]])
       return calib
     
-    def _get_overlay_imgs(self, prev_img_netin, detected_kps_raw_np, json_path, meta, output_dirs, i):
-        trans_input, trans_output = meta['trans_input'], meta['trans_output']
-        inp_width, inp_height = meta['inp_width'], meta['inp_height']
-        out_width, out_height = meta['out_width'], meta['out_height']
-        input_hm = np.zeros((1, inp_height, inp_width), dtype=np.float32) 
+    def _get_heatmap_and_topk(self, topk_indices, pre_hm, save_dir, i):
+        pre_hm_save = pre_hm[0][0]
+        pre_hm_img = dream.image_proc.image_from_belief_map(pre_hm_save)
+        overlay_whole_image = dream.image_proc.overlay_points_on_image(
+                self.pre_image,
+                topk_indices,
+                point_diameter=2,
+            )
+        pre_hm_img.save(save_dir + f"{str(i).zfill(5)}_prehm.png")
+        overlay_whole_image.save(save_dir + f"{str(i).zfill(5)}_topkimg.png")
+        print("Success save img and hms")
+        print("topk.shape", topk_indices.shape)
         
-
+        
+        
+    
+    def _get_overlay_imgs(self, hms, img, detected_kps_raw_np, json_path, meta, output_dirs, i):
+         
         parser = YAML(typ="safe")
         with open(json_path, "r") as f:
             data = parser.load(f.read().replace('\t', ' '))
-        data = data[0]
+        # print(data)
+        data = data["objects"][0]
         object_keypoints = data["keypoints"]
         gt_kps_raw = []
         detected_kps_raw = detected_kps_raw_np.tolist()
         overlay_whole_images = []
         overlay_gt_images = []
-        overlay_dt_images = []
+        overlay_dt_images = [] 
+        overlay_blend_images = []
+        
+        
+        
+        hms_imgs = []
+        trans = get_affine_transform(meta["c"], meta["s"], 0, (meta["out_width"], meta["out_height"]), inv=1)
+        for j in range(hms.shape[0]):
+            out_hm = cv2.warpAffine(
+            hms[j].cpu().numpy(), trans, (meta["width"], meta["height"]),flags=cv2.INTER_LINEAR)
+            out_hm_tensor = torch.from_numpy(out_hm).to(self.opt.device)
+            out_hm_img = dream.image_proc.image_from_belief_map(out_hm_tensor)
+            # print(out_hm_img.size)
+            hms_imgs.append(out_hm_img)
+            
         
         for idx, kp_name in enumerate(self.keypoint_names):
             gt_kps_raw.append(object_keypoints[idx]["projected_location"])
         
-        gt_kps_raw = dream.image_proc.convert_keypoints_to_netin_from_raw(
-        gt_kps_raw, (640, 360), (self.opt.input_w, self.opt.input_h), "shrink-and-crop")
         
         for idx, (gt_kp_raw, detected_kp_raw) in enumerate(zip(gt_kps_raw, detected_kps_raw)):
             #print('i', i)
-            ct_gt = affine_transform(gt_kp_raw, trans_input)
-            ct_gt[0] = np.clip(ct_gt[0], 0, inp_width-1)
-            ct_gt[1] = np.clip(ct_gt[1], 0, inp_height-1)
+            ct_gt = gt_kp_raw
+            ct_gt[0] = np.clip(ct_gt[0], 0, meta["width"]-1)
+            ct_gt[1] = np.clip(ct_gt[1], 0, meta["height"]-1)
             
-            ct_dt = affine_transform(detected_kp_raw, trans_input)
-            ct_dt[0] = np.clip(ct_dt[0], 0, inp_width-1)
-            ct_dt[1] = np.clip(ct_dt[1], 0, inp_height-1)
+            ct_dt = detected_kp_raw
+            ct_dt[0] = np.clip(ct_dt[0], 0, meta["width"]-1)
+            ct_dt[1] = np.clip(ct_dt[1], 0, meta["height"]-1)
+            
+            blend_image = Image.blend(
+                hms_imgs[idx], img, alpha=0.5
+            )
             
             overlay_whole_image = dream.image_proc.overlay_points_on_image(
-                prev_img_netin,
+                img,
                 [ct_gt, ct_dt],
+                [self.keypoint_names[idx]] * 2,
                 annotation_color_dot=["green", "red"],
+                annotation_color_text=["green", "red"],
+#                annotation_color_dot=["green", "red"],
                 point_diameter=4,
             )
+            overlay_whole_images.append(overlay_whole_image)
+            overlay_blend_images.append(blend_image)
             
-            overlay_gt_image = dream.image_proc.overlay_points_on_image(
-                prev_img_netin,
-                [ct_gt],
-                annotation_color_dot=["green"],
-                point_diameter=4,
-            )
-            
-            overlay_dt_image = dream.image_proc.overlay_points_on_image(
-                prev_img_netin,
-                [ct_dt],
-                annotation_color_dot=["red"],
-                point_diameter=4,
-            )
-            
-            whole_dir = output_dirs['whole']
-            this_whole_dir = os.path.join(whole_dir, f"{idx}_kps", "")
-            # print(this_whole_dir)
-            self.exists_or_mkdir(this_whole_dir)
-            s = str(i).zfill(5)
-            overlay_whole_image.save(this_whole_dir + f"{s}.png")
-            
-            # construct videos
-            if i == 29:
-                # print('constructing videos')
-                video_list = os.listdir(this_whole_dir)
-                video_list.sort()
-                # print(video_list)
-                image = Image.open(this_whole_dir + video_list[0])
-                video = cv2.VideoWriter(this_whole_dir + "whole.mp4", cv2.VideoWriter_fourcc('m', 'p', '4', 'v'), 2, image.size)
-                for j in range(1, len(video_list) + 1):
-                    img= cv2.imread(os.path.join(this_whole_dir, video_list[j-1])) # 读取图片
-                    video.write(img)
-                video.release()
-                
-            
-#            print('whole_image', overlay_whole_image.size)
-#            print('gt_image', overlay_gt_image.size) 
-#            print('dt_image', overlay_dt_image.size)
-            
-#            overlay_whole_images.append(overlay_whole_image)
-#            overlay_gt_images.append(overlay_gt_image)
-#            overlay_dt_images.append(overlay_dt_image)
 #            
-#        overlay_whole_mosaic = dream.image_proc.mosaic_images(
-#            overlay_whole_images, rows=2, cols=4, inner_padding_px=10
-#        )
+        overlay_whole_mosaic = dream.image_proc.mosaic_images(
+            overlay_whole_images, rows=2, cols=4, inner_padding_px=10
+        )
+        hm_whole_mosaic = dream.image_proc.mosaic_images(
+            hms_imgs, rows=2, cols=4, inner_padding_px=10
+        )
+        overlay_blend_mosaic = dream.image_proc.mosaic_images(
+            overlay_blend_images, rows=2, cols=4, inner_padding_px=10
+        )
 #        overlay_gt_mosaic = dream.image_proc.mosaic_images(
 #            overlay_gt_images, rows=2, cols=4, inner_padding_px=10
 #        )
 #        overlay_dt_mosaic = dream.image_proc.mosaic_images(
 #            overlay_dt_images, rows=2, cols=4, inner_padding_px=10
 #        )
-        
-#        overlay_whole_mosaic.save(output_dirs["whole"])
+#        print("detected_kps_raw", detected_kps_raw)
+        save_dir = os.path.join(output_dirs["whole"], str(self.idx).zfill(2))
+        self.exists_or_mkdir(save_dir)
+        overlay_whole_mosaic.save(os.path.join(save_dir, f"{str(i).zfill(5)}_overlay.png"))
+        hm_whole_mosaic.save(os.path.join(save_dir, f"{str(i).zfill(5)}_heatmap.png"))
+        overlay_blend_mosaic.save(os.path.join(save_dir, f"{str(i).zfill(5)}_blend.png"))
 #        overlay_gt_mosaic.save(output_dirs["gt"])
-#        overlay_dt_mosaic.save(output_dirs["dt"])
+#        overlay_dt_mosaic.save(output_dirs["dt"]) 
     
     def _get_overlay_output_imgs(self, detected_kps_output_np, meta,json_path, output_dirs, i):
         # print('output_kps', detected_kps_output_np)
@@ -963,17 +1080,24 @@ class DreamDetector(object):
         return output
       
     def process(self, images, pre_images=None, pre_hms=None, repro_hms=None,
-      pre_inds=None, return_time=False):
+      pre_inds=None, return_time=False, pre_hms_cls=None, repro_hms_cls=None):
       with torch.no_grad():
         torch.cuda.synchronize()
         if self.phase == "CenterTrack+Repro":
             output = self.model(images, pre_images, repro_hms)[-1]
         elif self.phase == "PlanA":
             output = self.model(images, pre_images, pre_hms, repro_hms)[-1]
+            # print("next hm's shape", output["hm"].shape)
         elif self.phase == "CenterTrack":
             output = self.model(images, pre_images, pre_hms)[-1]
         elif self.phase == "CenterNet":
             output = self.model(images)[-1]
+        elif self.phase == "CenterTrack-Pre_hm":
+            output = self.model(images, pre_images)[-1]
+        elif self.phase == "PlanA_win":
+            output = self.model(images, pre_images, pre_hms, repro_hms, pre_hms_cls, repro_hms_cls)[-1]
+        elif self.phase == "PlanACAT":
+            output = self.model(images, pre_images, pre_hms)[-1]
         else:
             raise ValueError
         # output = self.model(images)[-1]
@@ -995,11 +1119,12 @@ class DreamDetector(object):
 #        next_belief_maps_mosaic.save(self.next_belief_map_path)   
         
         dets = dream_generic_decode(output, K=self.opt.K, opt=self.opt)
+        hms = output["hm"][0]
         torch.cuda.synchronize()
         for k in dets:
           dets[k] = dets[k].detach().cpu().numpy()
       if return_time:
-        return output, dets, forward_time
+        return output, dets, forward_time, hms
       else:
         return output, dets
     
@@ -1017,7 +1142,19 @@ class DreamDetector(object):
               dets[0][i][k] = (np.array(
                 dets[0][i][k], np.float32) / scale).tolist()
       return dets[0]
-
+    
+    def transform_topk_coords_to_input(self, topk_indices, meta):
+        inp_height, inp_width = meta["inp_height"], meta["inp_width"]
+        # topk_indices为 1 x K
+        _, K = topk_indices.shape
+        topk_coords = torch.zeros(K, 2) # x, y
+        topk_coords[:, 0] = topk_indices[0] % inp_width
+        topk_coords[:, 1] = topk_indices[0] // inp_width
+        trans = get_affine_transform(
+      meta['c'], meta['s'], 0, (inp_width, inp_height), inv=1).astype(np.float32)
+        input_K = transform_preds_with_trans(topk_coords, trans)
+        return input_K # K x 2
+    
     def merge_outputs(self, detections):
       assert len(self.opt.test_scales) == 1, 'multi_scale not supported!'
       results = []

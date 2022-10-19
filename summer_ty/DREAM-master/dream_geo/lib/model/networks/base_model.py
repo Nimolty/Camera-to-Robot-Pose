@@ -165,9 +165,9 @@ class BaseModelPlanA(nn.Module):
     def imgpre2feats(self, x, pre_img=None, pre_hm=None):
       raise NotImplementedError
 
-    def forward(self, x, pre_img=None, pre_hm=None, repro_hm=None):
-      if (pre_hm is not None) or (pre_img is not None) or (repro_hm is not None):
-        feats = self.imgpre2feats(x, pre_img, pre_hm, repro_hm)
+    def forward(self, x, pre_img=None, pre_hm=None, repro_hm=None, pre_hm_cls = None, repro_hm_cls=None):
+      if (pre_hm is not None) or (pre_img is not None) or (repro_hm is not None) or (pre_hm_cls is not None) or (repro_hm_cls is not None):
+        feats, pre_topk_int, repro_topk_int = self.imgpre2feats(x, pre_img, pre_hm, repro_hm, pre_hm_cls, repro_hm_cls)
       else:
         feats = self.img2feats(x)
       out = []
@@ -183,6 +183,7 @@ class BaseModelPlanA(nn.Module):
           z = {}
           for head in self.heads:
               z[head] = self.__getattr__(head)(feats[s])
+          # z["pre_hm_topk_ind"] = pre_topk_int 
           out.append(z)
           # print('z', z.keys())
       return out

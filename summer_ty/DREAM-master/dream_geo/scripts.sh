@@ -86,17 +86,65 @@ python Dream_main.py tracking --exp_id 11  --pre_hm --same_aug --hm_disturb 0.05
 # planA !!!
 #python Dream_main.py tracking --exp_id 25  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --arch dlapa_34
 
-# 在franka_data_1003上跑，时序，使用dla backbone，仿射变换的aug，使用repro hm
+# 在franka_data_1003上跑，时序，使用dla backbone，仿射变换的aug，使用repro hm （监督在亚像素了）
 python Dream_main.py tracking --exp_id 26  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --phase Origin --resume --model_last_pth model_20.pth
 
-# 在franka_data_1003上跑，时序,仿射变换的aug, Plan A
+# 在franka_data_1003上跑，时序,仿射变换的aug, Plan A，监督在亚像素了（完蛋）
 python Dream_main.py tracking --exp_id 25  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlapa_34 --phase PlanA --resume --model_last_pth model_47.pth --is_real panda-3cam_realsense
 
-# 在franka_data_1003上跑，时序，训练时仿射变换的aug, origin, 但使用pre_hm而不是repro_hm, 使用dla的backbone
+# 在franka_data_1003上跑，时序，训练时仿射变换的aug, origin, 但使用pre_hm而不是repro_hm, 使用dla的backbone, 监督在亚像素了（完蛋）
 python Dream_main.py tracking --exp_id 27  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --phase Origin_worepro
 
 # 在franka_data_1003和franka_data_0909上混合跑，时序，训练时使用仿射变换的aug，PlanA
 python Dream_main.py tracking --exp_id 28  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 2,3 --arch dlapa_34 --phase PlanA --add_dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_0909/" --batch_size 32 --is_real panda-3cam_realsense --resume --model_last_pth model_11.pth
+
+# 在franka_data_0909上跑，PLANa, 仿射变换的aug，监督在整像素上了
+python Dream_main.py tracking --exp_id 30  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlapa_34 --phase PlanA --dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_0909/" --is_real panda-3cam_realsense
+
+# 在franka_data_0909上跑，CenterTrack - pre_hm，仿射变换的aug，监督在整像素了
+python Dream_main.py tracking --exp_id 31  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --phase CenterTrack-Pre_hm --dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_0909/" --is_real panda-3cam_realsense
+
+# 在franka_data_1010上跑，plana直接cat，仿射变换的aug，监督在整像素了
+python Dream_main.py tracking --exp_id 32  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlapa_341 --phase PlanA --is_real panda-3cam_realsense
+
+python Dream_main.py tracking --exp_id 33  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlapa_34 --phase PlanA --is_real panda-3cam_realsense
+
+# PlanA with window, 测试
+python Dream_main.py tracking --exp_id 34  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlapawd_34 --phase PlanA_win --is_real panda-3cam_realsense
+
+# PlanA with window ，在franka_data_0909上跑，仿射变化AUG，监督在整像素，学习率衰减,一共40个epoch --lr 1e-4， reg为0.01, hm 1
+python Dream_main.py tracking --exp_id 35  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlapawd_34 --phase PlanA_win --dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_0909/" --is_real panda-3cam_realsense --num_epochs 40
+
+python Dream_main.py tracking --exp_id 35  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlapawd_34 --phase PlanA_win --dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_0909/" --is_real panda-3cam_realsense --num_epochs 40 --resume --model_last_pth model_34.pth
+
+# PlanA with window , 在混合数据上跑，仿射变化aug,监督在整像素，学习率按照iteration衰减，lr=1.25e-4， reg为0.01, hm 1
+python Dream_main.py tracking --exp_id 36  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3,4,5 --arch dlapawd_34 --phase PlanA_win --add_dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_1003/" --is_real panda-3cam_realsense --num_epochs 40 --batch_size 64  
+
+# PLanA with window, 在franka data 0909跑，学习率按照iteration衰减，lr=1.25e-4, multi-head为4，一层transformer，reg为0.01, hm 1
+python Dream_main.py tracking --exp_id 37  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlapawd_34 --phase PlanA_win --dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_0909/" --is_real panda-3cam_realsense --num_epochs 40 
+
+# PlanA with window, 在franka data 0909跑，学习率按照iteration衰减，lr=1.25e-4, multi-head为8,3层transformer，但使用focol loss, reg loss为0.1, hm loss 0.1
+python Dream_main.py tracking --exp_id 38  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlapawd_34 --phase PlanA_win --dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_0909/" --is_real panda-3cam_realsense --num_epochs 40 
+
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/35/ckpt/model_33.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense
+
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/35/ckpt/model_35.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_kinect360
+
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/35/ckpt/model_35.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_azure
+
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/35/ckpt/model_35.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-orb
+
+python Results_save.py tracking --exp_id 32 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --arch dlapacat_341 --phase PlanACAT --is_real panda-3cam_realsense
+
+python Results_save.py tracking --exp_id 35 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --arch dlapawd_34 --phase PlanA_win --is_real panda-3cam_realsense 
+
+python Results_save.py tracking --exp_id 36 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --arch dlapawd_34 --phase PlanA_win --is_real panda-3cam_realsense 
+
+
+# 老数据集上synthetic和pure这里是不对的，直接看 real就好了
+
+
+
 
 # 测试
 python Dream_main.py tracking --exp_id 29  --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 0 --batch_size 1 --num_workers 0
@@ -110,28 +158,30 @@ python Dream_main.py tracking --exp_id 29  --pre_hm --same_aug --hm_disturb 0.75
 
 # python Results_save.py tracking --exp_id 21 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --arch dlaca_34
 
-python Results_save.py tracking --exp_id 25 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --arch dlapa_34 --phase PlanA --is_real panda-3cam_realsense
+#python Results_save.py tracking --exp_id 25 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --arch dlapa_34 --phase PlanA --is_real panda-3cam_realsense
+#
+#python Results_save.py tracking --exp_id 26 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --phase CenterTrack+Repro --is_real panda-3cam_realsense
+#
+#python Results_save.py tracking --exp_id 27 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --phase CenterTrack --is_real panda-3cam_realsense
 
-python Results_save.py tracking --exp_id 26 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --phase Origin --is_real panda-3cam_realsense
+python Results_save.py tracking --exp_id 19 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --phase CenterTrack+Repro 
 
-python Results_save.py tracking --exp_id 27 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --phase Origin_worepro --is_real panda-3cam_realsense
+python Results_save.py tracking --exp_id 20 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --phase CenterTrack 
 
-python Results_save.py tracking --exp_id 19 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --phase CenterTrack+Repro --is_real panda-3cam_realsense
+python Results_save.py tracking --exp_id 21 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --phase CenterNet 
 
-python Results_save.py tracking --exp_id 20 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --phase CenterTrack --is_real panda-3cam_realsense
+python Results_save.py tracking --exp_id 25 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --arch dlapa_34 --phase PlanA 
 
-python Results_save.py tracking --exp_id 21 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --phase CenterNet --is_real panda-3cam_realsense
+python Results_save.py tracking --exp_id 26 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --phase CenterTrack+Repro
 
-
-
-
+python Results_save.py tracking --exp_id 27 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --phase CenterTrack 
 
 #python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/26/ckpt/model_39.pth --phase Origin --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4
 ##
 #python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/25/ckpt/model_26.pth --phase PlanA --arch dlapa_34 --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4
 #
 ## tmux为0
-#python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/25/ckpt/model_42.pth --phase PlanA --arch dlapa_34 --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-orb
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/25/ckpt/model_20.pth --phase PlanA --arch dlapa_34 --pre_hm --track_thresh 0.1 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense
 #
 ## tmux为5
 #python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/25/ckpt/model_42.pth --phase PlanA --arch dlapa_34 --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_kinect360
@@ -174,7 +224,7 @@ python Results_save.py tracking --exp_id 21 --pre_hm --same_aug --hm_disturb 0.7
 #python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/26/ckpt/model_20.pth --phase Origin --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_azure
 #
 ## tmux为8
-#python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/26/ckpt/model_20.pth --phase Origin --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense
+#python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/26/ckpt/model_20.pth --phase CenterTrack --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense
 #
 ## tmux为5
 #python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/25/ckpt/model_20.pth --phase PlanA --arch dlapa_34 --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense 
@@ -189,3 +239,5 @@ python Results_save.py tracking --exp_id 21 --pre_hm --same_aug --hm_disturb 0.7
 #python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/25/ckpt/model_20.pth --phase PlanA --arch dlapa_34 --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-orb
 #
 # is_real \in { panda-orb, panda-3cam_realsense, panda-3cam_kinect360, panda-3cam_azure  }
+#########################dataset###############################
+"/root/autodl-tmp/camera_to_robot_pose/Dream_ty/synthetic_test_1018/" 新造数据集，朴素背景，30帧为一个视频，400个

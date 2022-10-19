@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 import numpy as np
 import dream_geo as dream
+import time
 
 def _sigmoid(x):
   y = torch.clamp(x.sigmoid_(), min=1e-4, max=1-1e-4)
@@ -203,6 +204,7 @@ def _softargmaxpavlo(scores):
     return topk_score, topk_inds, topk_clses, topk_ys, topk_xs
     
 def _peaks_info(scores):
+#    g1 = time.time()
     batch, cat, height, width = scores.size() # 这里的scores是output["hm"]
     peaks_from_belief_maps_kwargs = {}
     peaks_from_belief_maps_kwargs["offset_due_to_upsampling"] = 0.4395
@@ -210,6 +212,9 @@ def _peaks_info(scores):
     peaks = dream.image_proc.peaks_from_belief_maps(
         scores[0], **peaks_from_belief_maps_kwargs
         )
+#    g2 = time.time()
+#    print("g2 - g1", g2 - g1)
+    
     for peak in peaks:
         if len(peak) == 1:
             topk_coord.append([peak[0][0], peak[0][1]])
@@ -237,6 +242,8 @@ def _peaks_info(scores):
             else:
                 topk_coord.append([-999.999, -999.999])
                                           
+#    g3 = time.time()
+#    print("g3 - g2", g3 - g2)
     
     topk_score = []
     topk_coord_ad = []
@@ -250,6 +257,11 @@ def _peaks_info(scores):
             x_int, y_int = int(x), int(y)
             topk_score.append(this_hm[y_int][x_int].cpu())
             topk_coord_ad.append([x_int, y_int])
+    # print('topk_score', topk_score)
+    # print('topk_coord_ad', topk_coord_ad)
+    
+#    g4 = time.time()
+#    print("g4 - g3", g4 - g3)
     
     topk_clses = torch.arange(cat).view(batch, -1).cuda()
     topk_score_tensor = torch.tensor(topk_score).view(batch, cat)
@@ -257,6 +269,9 @@ def _peaks_info(scores):
     topk_xs = topk_coord_ad_tensor[:, 0].view(batch, -1).type(torch.int64).cuda()
     topk_ys = topk_coord_ad_tensor[:, 1].view(batch, -1).type(torch.int64).cuda()
     topk_inds = (topk_ys * width + topk_xs).type(torch.int64).cuda()
+#    
+#    g5 = time.time()
+#    print("g5 - g4", g5 - g4)
 #    print('topk_ind', topk_inds.device)
 #    print('topk_clses', topk_clses.device)
 #    print('topk_ys', topk_ys.device)

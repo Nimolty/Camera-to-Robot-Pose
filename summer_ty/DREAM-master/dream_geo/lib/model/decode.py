@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from .utils import _gather_feat, _tranpose_and_gather_feat
 from .utils import _nms, _topk, _topk_channel, _softargmaxpavlo, _peaks_info
-
+import time
 
 def _update_kps_with_hm(
   kps, output, batch, num_joints, K, bboxes=None, scores=None):
@@ -182,6 +182,7 @@ def generic_decode(output, K=7, opt=None):
   return ret
   
 def dream_generic_decode(output, K=7, opt=None):
+  # g1 = time.time()
   if not ('hm' in output):
     return {}
 
@@ -196,7 +197,8 @@ def dream_generic_decode(output, K=7, opt=None):
   # _peaks_info(heat)
   # scores, inds, clses, ys0, xs0 = _topk(heat, K=K)
   scores, inds, clses, ys0, xs0 = _peaks_info(heat)
-  
+  # g2 = time.time()
+  # print("g2 - g1", g2 - g1)
   # print('scores.shape', scores.shape)
   # print('inds.shape', inds.shape)
   # print('inds', inds)
@@ -210,6 +212,10 @@ def dream_generic_decode(output, K=7, opt=None):
   cts = torch.cat([xs0.unsqueeze(2), ys0.unsqueeze(2)], dim=2)
   ret = {'scores': scores, 'clses': clses.float(), 
          'xs': xs0, 'ys': ys0, 'cts': cts} 
+         
+  # g3 = time.time()
+  # print("g3 - g2", g3 -g2)
+  
   if 'reg' in output:
     reg = output['reg']
     # print("reg", output["reg"])
@@ -244,7 +250,10 @@ def dream_generic_decode(output, K=7, opt=None):
                         ys + wh[..., 1:2] / 2], dim=2)
     ret['bboxes'] = bboxes
     # print('ret bbox', ret['bboxes'])
- 
+  
+  # g4 = time.time()
+  # print("g4 - g3", g4 - g3)
+  
   if 'ltrb' in output:
     ltrb = output['ltrb']
     ltrb = _tranpose_and_gather_feat(ltrb, inds) # B x K x 4
@@ -295,5 +304,8 @@ def dream_generic_decode(output, K=7, opt=None):
 
     ret['pre_cts'] = torch.cat(
       [pre_xs.unsqueeze(2), pre_ys.unsqueeze(2)], dim=2)
+  
+  # g5 = time.time()
+  # print("g5 - g4", g5 - g4)
   
   return ret

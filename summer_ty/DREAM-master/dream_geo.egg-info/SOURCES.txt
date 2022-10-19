@@ -15,6 +15,7 @@ dream_geo/network.py
 dream_geo/network_inference_dataset.py
 dream_geo/oks_plots.py
 dream_geo/spatial_softmax.py
+dream_geo/test.py
 dream_geo/utilities.py
 dream_geo.egg-info/PKG-INFO
 dream_geo.egg-info/SOURCES.txt

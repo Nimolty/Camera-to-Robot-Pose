@@ -1283,14 +1283,17 @@ def keypoint_metrics(
 
         if (
             # kp_proj_gt[0] <= 140.0
-            kp_proj_gt[0] <= 0.0
+            kp_proj_gt[0] < 0.0
             # or kp_proj_gt[0] >= image_resolution[0] - 140.0
-            or kp_proj_gt[0] >= image_resolution[0]
+            or kp_proj_gt[0] > image_resolution[0]
             or kp_proj_gt[1] < 0.0
             or kp_proj_gt[1] > image_resolution[1]
         ):
             # GT keypoint is out of frame
             num_gt_outframe += 1
+            print('gt', kp_proj_gt)
+            print('detect', kp_proj_detect)
+            print('json_order', json_order)
 
             if kp_proj_detect[0] < -999.0 and kp_proj_detect[1] < -999.0:
                 # Did not find a keypoint (correct)
@@ -1306,8 +1309,8 @@ def keypoint_metrics(
             if kp_proj_detect[0] < -999.0 and kp_proj_detect[1] < -999.0:
                 # Did not find a keypoint (wrong)
                 num_missing_gt_inframe += 1
-                print('order', json_order)
-                print('kp_proj_gt', kp_proj_gt)
+                # print('order', json_order)
+                # print('kp_proj_gt', kp_proj_gt)
             else:
                 # Found a keypoint (correct)
                 num_found_gt_inframe += 1

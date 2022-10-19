@@ -637,7 +637,9 @@ def draw_umich_gaussian(heatmap, center, radius, k=1):
     # gaussian = gaussian2D((diameter, diameter), sigma=2)
     
     if x - radius >=0 and x + radius + 1 < width and y - radius >= 0 and y + radius + 1 < height:
-        res = [center[0] - x, center[1] - y]
+        res = [0, 0]  # 统一使用整像素的hm 
+        # print(res)
+        # res = [center[0] -x , center[1] - y]
         gaussian = gaussian2D((diameter, diameter), sigma=2, res=res)
         # height, width = heatmap.shape[0:2]
           
@@ -747,7 +749,38 @@ def affine_transforms(pts, t, width, height):
 
     return new_pts
 
-def affine_transform_and_clip(pts, t, width, height):
+def affine_transform_and_clip(pts, t, width, height, raw_width, raw_height,mode=None):
+    n_kp, _ = pts.shape
+    new_ones = np.ones(n_kp).reshape(n_kp, 1)
+    new_pts = np.concatenate((pts, new_ones), axis=-1)
+    new_pts = np.dot(t, new_pts.T) # 得到一个2 x n_kp的矩阵
+    new_pts = new_pts.T
+    
+    new_pts[:, 0] = np.clip(new_pts[:, 0], 0, width-1)
+    new_pts[:, 1] = np.clip(new_pts[:, 1], 0, height-1)
+    
+    new_pts = new_pts.tolist()
+    out = []
+    
+    # flag=  False
+    for kp in range(n_kp):
+        pts_x, pts_y = pts[kp][0], pts[kp][1]
+        if 0.0 <= pts_x < raw_width and 0.0 <= pts_y < raw_height:
+            out.append(new_pts[kp])
+        else:
+            out.append([0,0])
+#    if flag:
+#        print('pts', pts)
+#        print('new_pts', new_pts)
+#        print('out', out)
+#    if mode:
+#        if len(out) != 7:
+#            print('n_kp', n_kp)
+#            print(len(out))
+#            print(out)
+    return np.array(out)
+
+def affine_transform_and_clip_old(pts, t, width, height):
     n_kp, _ = pts.shape
     new_ones = np.ones(n_kp).reshape(n_kp, 1)
     new_pts = np.concatenate((pts, new_ones), axis=-1)
@@ -758,10 +791,9 @@ def affine_transform_and_clip(pts, t, width, height):
     new_pts[:, 1] = np.clip(new_pts[:, 1], 0, height-1)
     return new_pts
 
-
-def get_prev_hm(kp_projs_raw, trans_input,input_w, input_h, hm_disturb = 0.05, lost_disturb=0.1):
+def get_prev_hm(kp_projs_raw, trans_input, input_w, input_h, raw_width, raw_height, hm_disturb = 0.05, lost_disturb=0.1,mode=None):
     hm_w, hm_h = input_w, input_h
-    kp_projs_net_output = affine_transform_and_clip(kp_projs_raw, trans_input, input_w, input_h) # 得到一个kp x 2的矩阵
+    kp_projs_net_output = affine_transform_and_clip(kp_projs_raw, trans_input, input_w, input_h, raw_width, raw_height,mode=mode) # 得到一个kp x 2的矩阵
     pre_hm = np.zeros((hm_h, hm_w), dtype=np.float32)
     n_kp, _ = kp_projs_net_output.shape
     radius = 4
@@ -781,13 +813,35 @@ def get_prev_hm(kp_projs_raw, trans_input,input_w, input_h, hm_disturb = 0.05, l
 #            draw_umich_gaussian(pre_hm, ct2, radius, k=conf)
 
     return pre_hm 
-    
-    
-def get_prev_hm_wo_noise(kp_projs_raw, trans_input,input_w, input_h):
+
+def get_prev_hm_old(kp_projs_raw, trans_input,input_w, input_h, hm_disturb = 0.05, lost_disturb=0.1):
+    hm_w, hm_h = input_w, input_h
+    kp_projs_net_output = affine_transform_and_clip_old(kp_projs_raw, trans_input, input_w, input_h) # 得到一个kp x 2的矩阵
+    pre_hm = np.zeros((hm_h, hm_w), dtype=np.float32)
+    n_kp, _ = kp_projs_net_output.shape
+    radius = 4
+    for i in range(n_kp):
+        ct = deepcopy(kp_projs_net_output[i])
+        ct[0] = ct[0] + np.random.randn() * hm_disturb * 2 # hm_disturb是原来paper中的\lambda_jt
+        ct[1] = ct[1] + np.random.randn() * hm_disturb * 2
+        
+        conf = 1 if np.random.random() > lost_disturb else 0
+        draw_umich_gaussian(pre_hm, ct, radius, k=conf) # lost_disturb对应fn randomly removing detections with probability \lambda_fn
+        
+#        if np.random.random() < fp_disturb:
+#            # Hard code heatmap disturb ratio, haven't tried other numbers.
+#            ct2 = deepcopy(kp_projs_net_output[i])
+#            ct2[0] = ct2[0] + np.random.randn() * 0.05 * 2
+#            ct2[1] = ct2[1] + np.random.randn() * 0.05 * 2 
+#            draw_umich_gaussian(pre_hm, ct2, radius, k=conf)
+
+    return pre_hm 
+
+def get_prev_hm_wo_noise_old(kp_projs_raw, trans_input,input_w, input_h):
     hm_w, hm_h = input_w, input_h
     pre_hm = np.zeros((hm_h, hm_w), dtype=np.float32)
     if kp_projs_raw is not None:
-        kp_projs_net_output = affine_transform_and_clip(kp_projs_raw, trans_input, input_w, input_h) # 得到一个kp x 2的矩阵
+        kp_projs_net_output = affine_transform_and_clip_old(kp_projs_raw, trans_input, input_w, input_h) # 得到一个kp x 2的矩阵
         n_kp, _ = kp_projs_net_output.shape
         radius = 4
         for i in range(n_kp):
@@ -796,7 +850,38 @@ def get_prev_hm_wo_noise(kp_projs_raw, trans_input,input_w, input_h):
             draw_umich_gaussian(pre_hm, ct, radius, k=conf) # lost_disturb对应fn randomly removing detections with probability \lambda_fn
 
     return pre_hm 
-    
+
+def get_prev_hm_wo_noise(kp_projs_raw, trans_input,input_w, input_h, raw_width, raw_height,mode=None):
+    hm_w, hm_h = input_w, input_h
+    pre_hm = np.zeros((hm_h, hm_w), dtype=np.float32)
+    if kp_projs_raw is not None:
+        kp_projs_net_output = affine_transform_and_clip(kp_projs_raw, trans_input, input_w, input_h, raw_width, raw_height,mode=mode) # 得到一个kp x 2的矩阵
+        n_kp, _ = kp_projs_net_output.shape
+        radius = 4
+        for i in range(n_kp):
+            ct = deepcopy(kp_projs_net_output[i])
+            conf = 1
+            draw_umich_gaussian(pre_hm, ct, radius, k=conf) # lost_disturb对应fn randomly removing detections with probability \lambda_fn
+
+    return pre_hm 
+
+def get_prev_hm_wo_noise_cls(kp_projs_raw, kp_gts_raw, trans_input, input_w, input_h, \
+                             raw_width, raw_height, mode=None):
+    n_kp, _ = kp_gts_raw.shape
+    hm_w, hm_h = input_w, input_h
+    pre_hm_cls = np.zeros((n_kp, hm_h, hm_w), dtype=np.float32)
+    if kp_projs_raw is not None:
+        assert kp_projs_raw.shape[0] == n_kp
+        kp_projs_net_output = affine_transform_and_clip(kp_projs_raw, trans_input, input_w, input_h, raw_width, raw_height,mode=mode) # 得到一个kp x 2的矩阵
+        radius = 4
+        for i in range(n_kp):
+            ct = deepcopy(kp_projs_net_output[i])
+            conf = 1
+            draw_umich_gaussian(pre_hm_cls[i], ct, radius, k=conf)
+    return pre_hm_cls
+
+
+
 def get_prev_ori_hm(kp_projs_net_input_np, input_resolution, hm_disturb = 0.05, lost_disturb=0.1, fp_disturb=0.1):
     hm_w, hm_h = input_resolution
     # kp_projs_net_input_np 得到一个kp x 2的矩阵

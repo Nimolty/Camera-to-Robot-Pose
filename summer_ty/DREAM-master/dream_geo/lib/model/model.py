@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import os
 
-from .networks.dla import DLASeg, DLASegCA, DLA_PlanA
+from .networks.dla import DLASeg, DLASegCA, DLA_PlanA, DLA_PlanAWindow, DLA_PlanACAT
 from .networks.resdcn import PoseResDCN
 from .networks.resnet import PoseResNet
 from .networks.dlav0 import DLASegv0
@@ -22,7 +22,9 @@ _network_factory = {
   'generic': GenericNetwork,
   "dreamhourglass" : DreamHourglass,
   "dlaca" :DLASegCA,
-  "dlapa" : DLA_PlanA
+  "dlapa" : DLA_PlanA,
+  "dlapawd" : DLA_PlanAWindow,
+  "dlapacat" : DLA_PlanACAT
 }
 
 def create_model(arch, head, head_conv, opt=None):

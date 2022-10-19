@@ -13,11 +13,11 @@ class opts(object):
     self.parser.add_argument('task', default='',
                              help='ctdet | ddd | multi_pose '
                              '| tracking or combined with ,')
-    self.parser.add_argument('--dataset', default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_1003/",
+    self.parser.add_argument('--dataset', default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_0909/",
                              help='see lib/dataset/dataset_facotry for ' + 
                             'available datasets')
     self.parser.add_argument("--add_dataset", default=None, help="add more data if required")
-    self.parser.add_argument('--val_dataset', default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/validation/")
+    self.parser.add_argument('--val_dataset', default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/valdata_randomtex/")
     self.parser.add_argument("--infer_dataset", default = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/synthetic_test_1005/")
     self.parser.add_argument('--root_dir', type=str, default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/")
     self.parser.add_argument('--test_dataset', default='',
@@ -136,6 +136,7 @@ class opts(object):
                              help='when to save the model to disk.')
     self.parser.add_argument('--num_epochs', type=int, default=70,
                              help='total training epochs.')
+    self.parser.add_argument('--max_iters', type=float, default=1.5e5, help="dacay the learning rate")
     self.parser.add_argument('--batch_size', type=int, default=16,
                              help='batch size')
     self.parser.add_argument('--master_batch_size', type=int, default=-1,
