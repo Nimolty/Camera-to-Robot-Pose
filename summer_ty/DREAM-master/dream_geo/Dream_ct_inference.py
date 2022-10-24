@@ -11,8 +11,8 @@ from __future__ import print_function
 # import tools._init_paths as _init_paths
 
 import os
-# os.environ['CUDA_VISIBLE_DEVICES'] = '6'
-os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+os.environ['CUDA_VISIBLE_DEVICES'] = '6'
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2"
 import sys
 import cv2
 import json
@@ -30,17 +30,7 @@ import time
 
 
 def find_dataset(opt):
-    keypoint_names = [
-    "Link0",
-    "Link1",
-    "Link3",
-    "Link4", 
-    "Link6",
-    "Link7",
-    "Panda_hand",
-    ]
-
-    real_keypoint_names = ["panda_link0", "panda_link2", "panda_link3", "panda_link4", "panda_link6", "panda_link7", "panda_hand"]
+    keypoint_names = opts().get_keypoint_names(opt)
     input_dir = opt.infer_dataset
     input_dir = os.path.expanduser(input_dir) # 输入的是../../franka_data_0825
     assert os.path.exists(input_dir),\
@@ -66,20 +56,11 @@ def find_dataset(opt):
     return found_videos
 
 def inference(opt):
-    keypoint_names = [
-    "Link0",
-    "Link1",
-    "Link3",
-    "Link4", 
-    "Link6",
-    "Link7",
-    "Panda_hand",
-    ]
-    
+    keypoint_names = opts().get_keypoint_names(opt)
     with torch.no_grad():
         found_videos = find_dataset(opt)
         json_list, detected_kps_list = [], []
-        for video_idx, found_video_0 in tqdm(enumerate(found_videos[:50])):
+        for video_idx, found_video_0 in tqdm(enumerate(found_videos)): # 全部Inference！
         # found_video_0 = found_videos[j]
         # print('found_video_0', found_video_0) 
         # print('json_path', found_video_0[1])
@@ -93,7 +74,6 @@ def inference(opt):
 #                print('img_path', img_path)
 #                print('json_path', json_path)
                 img = cv2.imread(img_path)
-                
 #                img = PILImage.open(img_path).convert("RGB")
 #                img_shrink_and_crop = dream.image_proc.preprocess_image(
 #                img, (opt.input_w, opt.input_h), "shrink-and-crop"
@@ -160,6 +140,13 @@ def inference_real(opt):
                         continue 
                     
                     img = cv2.imread(img_path)
+#                    img_resized = cv2.resize(img1, (img1.shape[1]//2, img1.shape[0]//2))
+#                    print("img_resized.shape",img_resized.shape)
+#                    print("img1.shape", img1.shape)
+#                    img_input = np.zeros((480, 480, 3))
+#                    img_input[120:-120, 80:-80, :] = img_resized
+#                    img = img_input
+                
                     # print('img.shape', img.shape)
 #                    img = PILImage.open(img_path).convert("RGB")
 #                    print("#################### SIZE ####################")
@@ -182,7 +169,8 @@ def inference_real(opt):
                     # t1 = time.time()
                     ret, detected_kps_np = detector.run(img, j, json_path, is_final=True, save_dir=save_dir)
                     
-                    img_PIL = PILImage.open(img_path)
+#                    detected_kps_np = (detected_kps_np - np.array([159, 119])) * 2
+#                    img_PIL = PILImage.open(img_path)
                     
 #                    print("total", ret["tot"])
 #                    print("load time", ret["load"])

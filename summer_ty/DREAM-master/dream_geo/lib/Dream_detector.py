@@ -392,20 +392,15 @@ class DreamDetector(object):
       # print('trans_input', trans_input)
       # print('trans_output', trans_output)
       
-      scale_ratio = inp_width / width
-      new_resized_image = cv2.resize(resized_image, (int(width * scale_ratio), int(height * scale_ratio)))
-      #t3 = time.time()
-      #print("t3 - t2", t3 - t2)
-      inp_image = np.zeros((inp_height, inp_width, 3))
-      gap = int((inp_height - scale_ratio * height) / 2)
-      
-      inp_image[gap:-gap, :, :] = new_resized_image
-      #t33 = time.time()
-      #print("t33 - t3", t33 - t3)
+#      scale_ratio = inp_width / width
+#      new_resized_image = cv2.resize(resized_image, (int(width * scale_ratio), int(height * scale_ratio)))
+#      inp_image = np.zeros((inp_height, inp_width, 3))
+#      gap = int((inp_height - scale_ratio * height) / 2)
+#      inp_image[gap:-gap, :, :] = new_resized_image
 
-#      inp_image = cv2.warpAffine(
-#        resized_image, trans_input, (inp_width, inp_height),
-#        flags=cv2.INTER_LINEAR)
+      inp_image = cv2.warpAffine(
+        resized_image, trans_input, (inp_width, inp_height),
+        flags=cv2.INTER_LINEAR)
       inp_image = torch.from_numpy(inp_image)
       inp_image = self.normalize_img(inp_image, self.mean, self.std) 
       #t333 = time.time()
@@ -462,8 +457,8 @@ class DreamDetector(object):
       out_width, out_height = meta['out_width'], meta['out_height']
       input_hm = np.zeros((1, inp_height, inp_width), dtype=np.float32) 
       repro_hm = np.zeros((1, inp_height, inp_width), dtype=np.float32)
-      pre_hm_cls = torch.zeros(1, 7, out_height, out_width)
-      repro_hm_cls = torch.zeros(1, 7, out_height, out_width)
+      pre_hm_cls = torch.zeros(1, self.opt.num_classes, out_height, out_width)
+      repro_hm_cls = torch.zeros(1, self.opt.num_classes, out_height, out_width)
 
       output_inds = []
       for det in dets:
@@ -506,16 +501,8 @@ class DreamDetector(object):
         inp_width, inp_height = meta['inp_width'], meta['inp_height']
         out_width, out_height = meta['out_width'], meta['out_height']
         
-        keypoint_names = [
-        "Link0",
-        "Link1",
-        "Link3",
-        "Link4", 
-        "Link6",
-        "Link7",
-        "Panda_hand",
-        ]
-        object_name = "Franka_Emika_Panda"
+        keypoint_names = self.keypoint_names
+        object_name = self.opt.robot
         
         prev_keypoints = dream.utilities.load_seq_keypoints(prev_json, object_name, keypoint_names)
         next_keypoints = dream.utilities.load_seq_keypoints(json, object_name, keypoint_names)
@@ -567,13 +554,13 @@ class DreamDetector(object):
         keypoint_names = ["panda_link0", "panda_link2", "panda_link3", "panda_link4", "panda_link6", "panda_link7", "panda_hand"]
         object_name = "panda"
         # t1 = time.time()
-#        prev_keypoints = dream.utilities.load_keypoints(prev_json, object_name, keypoint_names)
-#        next_keypoints = dream.utilities.load_keypoints(json, object_name, keypoint_names)
-#        prev_x3d_np = np.array(prev_keypoints["positions_wrt_cam"])
-#        next_x3d_np = np.array(next_keypoints["positions_wrt_cam"])
+        prev_keypoints = dream.utilities.load_keypoints(prev_json, object_name, keypoint_names)
+        next_keypoints = dream.utilities.load_keypoints(json, object_name, keypoint_names)
+        prev_x3d_np = np.array(prev_keypoints["positions_wrt_cam"])
+        next_x3d_np = np.array(next_keypoints["positions_wrt_cam"])
         # t2 = time.time()
-        prev_x3d_np = np.ones((7, 3))
-        next_x3d_np = np.ones((7, 3))
+#        prev_x3d_np = np.ones((7, 3))
+#        next_x3d_np = np.ones((7, 3))
         # print("t2 - t1", t2 - t1)
         
         n_kp, _ = prev_x3d_np.shape
@@ -639,44 +626,7 @@ class DreamDetector(object):
       # pre_hm = dream.utilities.get_prev_hm_wo_noise_old(kps_raw_np, trans_input, inp_width, inp_height)
       pre_hm = torch.from_numpy(pre_hm).view(1, 1, inp_height, inp_width)
       return pre_hm.to(self.opt.device)
-      
-#      for ct_det in kps_raw_list:
-#          # print('ct_det', ct_det) 
-#          if -999.999 * 4 in ct_det:
-#              # print('找到了-999.999')
-#              continue
-#          
-#          # print('trans_input', trans_input)
-#          ct_det = affine_transform(ct_det, trans_input)
-#          ct_det[0] = np.clip(ct_det[0], 0, inp_width-1)
-#          ct_det[1] = np.clip(ct_det[1], 0, inp_height-1)
-#          
-#          ct_int = ct_det.astype(np.int32)
-#          pixel_u, pixel_v = ct_int
-#          w = int(sigma * 2)
-#          if (
-#                pixel_u - w >= 0
-#                and pixel_u + w + 1 < inp_width
-#                and pixel_v - w >= 0
-#                and pixel_v + w + 1 < inp_height
-#            ):
-#                for i in range(pixel_u - w, pixel_u + w + 1):
-#                    for j in range(pixel_v - w, pixel_v + w + 1):
-#                        input_hm[0][j, i] += np.exp(
-#                        -(
-#                            ((i - pixel_u) ** 2 + (j - pixel_v) ** 2)
-#                            / (2 * (sigma ** 2))
-#                            )
-#                          )
-
-#      if with_hm:
-#          input_hm = input_hm[np.newaxis]
-#          if self.opt.flip_test:
-#            input_hm = np.concatenate((input_hm, input_hm[:, :, :, ::-1]), axis=0)
-#          input_hm = torch.from_numpy(input_hm).to(self.opt.device)
-      
-#      return input_hm
-    
+          
     
     def _get_initial_gt_inputs(self, json_path, meta, with_hm=True):
       '''
@@ -1118,7 +1068,7 @@ class DreamDetector(object):
 #                        )
 #        next_belief_maps_mosaic.save(self.next_belief_map_path)   
         
-        dets = dream_generic_decode(output, K=self.opt.K, opt=self.opt)
+        dets = dream_generic_decode(output, K=self.opt.num_classes, opt=self.opt)
         hms = output["hm"][0]
         torch.cuda.synchronize()
         for k in dets:

@@ -84,8 +84,8 @@ class FocolLoss(torch.nn.Module):
 class Loss(torch.nn.Module):
     def __init__(self, opt):
         super(Loss, self).__init__()
-        # self.crit = torch.nn.MSELoss()
-        self.crit = FocolLoss()
+        self.crit = torch.nn.MSELoss()
+        # self.crit = FocolLoss()
         self.crit_reg = RegL1Loss()
         # self.crit_reg = torch.nn.SmoothL1Loss() 
         self.opt = opt
@@ -103,9 +103,9 @@ class Loss(torch.nn.Module):
         opt = self.opt
         losses = {head: 0 for head in opt.heads}
         weights = {head : 1 for head in opt.heads}  
-        weights["hm"] = 0.1
+        weights["hm"] = 1
         weights['tracking'] = 0.0
-        weights['reg'] = 0.1 
+        weights['reg'] = 0.01 
         
         
         for s in range(opt.num_stacks):
@@ -120,8 +120,8 @@ class Loss(torch.nn.Module):
             output = self._sigmoid_output(output)
             
             if 'hm' in output:
-                losses['hm'] += self.crit(output['hm'], batch["next_belief_maps"].to(opt.device), batch["next_keypoint_projections_output"].to(opt.device)) / opt.num_stacks
-#                losses['hm'] += self.crit(output['hm'], batch["next_belief_maps"].to(opt.device)) / opt.num_stacks
+#                losses['hm'] += self.crit(output['hm'], batch["next_belief_maps"].to(opt.device), batch["next_keypoint_projections_output"].to(opt.device)) / opt.num_stacks
+                losses['hm'] += self.crit(output['hm'], batch["next_belief_maps"].to(opt.device)) / opt.num_stacks
             
             regression_heads = [
             'reg', 'tracking'] 
@@ -201,6 +201,8 @@ class Trainer(object):
                     outputs = model(next_img, pre_img, pre_origin_hm)
                 elif phase == "CenterTrack-Pre_hm":
                     outputs = model(next_img, pre_img)
+                elif phase == "CenterNet":
+                    outputs = model(next_img)
                 elif phase == "PlanA_win":
                     pre_hm_cls = batch["prev_belief_maps_cls"].to(device)
                     repro_hm_cls = batch["repro_belief_maps_cls"].to(device)
@@ -274,6 +276,8 @@ class Trainer(object):
                 outputs = model(next_img, pre_img, pre_origin_hm)
             elif phase == "CenterTrack-Pre_hm":
                 outputs = model(next_img, pre_img)
+            elif phase == "CenterNet":
+                outputs = model(next_img)
             elif phase == "PlanA_win":
                 pre_hm_cls = batch["prev_belief_maps_cls"].to(device)
                 repro_hm_cls = batch["repro_belief_maps_cls"].to(device)
@@ -340,28 +344,29 @@ class Trainer(object):
                                 next_belief_map, normalization_method=6
                                 )
                                 next_belief_maps_mosaic = dream.image_proc.mosaic_images(
-                                next_belief_map_img, rows=2, cols=4, inner_padding_px=10
+                                next_belief_map_img, rows=3, cols=4, inner_padding_px=10
                                 )
                                 next_gt_belief_map_img = dream.image_proc.images_from_belief_maps(
                                 next_gt_belief_map, normalization_method=6
                                 )
                                 next_gt_belief_maps_mosaic = dream.image_proc.mosaic_images(
-                                next_gt_belief_map_img, rows=2, cols=4, inner_padding_px=10
+                                next_gt_belief_map_img, rows=3, cols=4, inner_padding_px=10
                                 )
                                 
-                                pre_hm_cls_img = dream.image_proc.images_from_belief_maps(
-                                pre_hm_cls_wholes[idx], normalization_method=6
-                                )
-                                pre_hm_cls_mosaic = dream.image_proc.mosaic_images(
-                                pre_hm_cls_img, rows=2, cols=4, inner_padding_px=10
-                                )
+                                if phase == "PlanA_win":
+                                    pre_hm_cls_img = dream.image_proc.images_from_belief_maps(
+                                    pre_hm_cls_wholes[idx], normalization_method=6
+                                    )
+                                    pre_hm_cls_mosaic = dream.image_proc.mosaic_images(
+                                    pre_hm_cls_img, rows=3, cols=4, inner_padding_px=10
+                                    )
                                 
-                                repro_hm_cls_img = dream.image_proc.images_from_belief_maps(
-                                repro_hm_cls_wholes[idx], normalization_method=6
-                                )
-                                repro_hm_cls_mosaic = dream.image_proc.mosaic_images(
-                                repro_hm_cls_img, rows=2, cols=4, inner_padding_px=10
-                                )
+                                    repro_hm_cls_img = dream.image_proc.images_from_belief_maps(
+                                    repro_hm_cls_wholes[idx], normalization_method=6
+                                    )
+                                    repro_hm_cls_mosaic = dream.image_proc.mosaic_images(
+                                    repro_hm_cls_img, rows=3, cols=4, inner_padding_px=10
+                                    )
                                 
                                 writer.add_image(f'{idx} prev_rgb_net_input_img', np.array(prev_rgb_net_input_img), batch_idx + (epoch-1) * len(data_loader), dataformats='HWC')
                                 writer.add_image(f'{idx} next_rgb_net_input_img', np.array(next_rgb_net_input_img), batch_idx + (epoch-1) * len(data_loader), dataformats='HWC')
@@ -369,8 +374,9 @@ class Trainer(object):
                                 writer.add_image(f'{idx} repro_belief_map_whole_img', np.array(repro_belief_map_whole_img), batch_idx + (epoch-1) * len(data_loader), dataformats='HWC')
                                 writer.add_image(f'{idx} next_belief_maps_img', np.array(next_belief_maps_mosaic), batch_idx + (epoch-1) * len(data_loader), dataformats='HWC')
                                 writer.add_image(f'{idx} next_gt_belief_map_img', np.array(next_gt_belief_maps_mosaic), batch_idx + (epoch-1) * len(data_loader), dataformats='HWC')
-                                writer.add_image(f'{idx} pre_hm_cls', np.array(pre_hm_cls_mosaic), batch_idx + (epoch-1) * len(data_loader), dataformats='HWC')
-                                writer.add_image(f'{idx} repro_hm_cls', np.array(repro_hm_cls_mosaic), batch_idx + (epoch-1) * len(data_loader), dataformats='HWC')
+                                if phase == "PlanA_win":
+                                    writer.add_image(f'{idx} pre_hm_cls', np.array(pre_hm_cls_mosaic), batch_idx + (epoch-1) * len(data_loader), dataformats='HWC')
+                                    writer.add_image(f'{idx} repro_hm_cls', np.array(repro_hm_cls_mosaic), batch_idx + (epoch-1) * len(data_loader), dataformats='HWC')
 #                                
                 
                          

@@ -13,8 +13,8 @@ from pyrr import Quaternion
 import dream
 from ruamel.yaml import YAML
 
-image_path ="/root/autodl-tmp/yangtian/summer_ty/DREAM-master/scripts/overlay_imgs/0001_color.png"
-json_path = "/root/autodl-tmp/yangtian/summer_ty/DREAM-master/scripts/overlay_imgs/0001_meta.json"
+image_path ="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/pure_test/00400/0003_color.png"
+json_path = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/pure_test/00400/0003_meta.json"
 kp_projs = []
 data_parser = YAML(typ="safe")
 with open(json_path, "r") as f:

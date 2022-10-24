@@ -767,6 +767,49 @@ class DLASegCA(BaseModelCA):
 class TransformerEncoderLayer(nn.Module):
     def __init__(self, d_inp, d_model, n_k, d_ffn=1024,
                  dropout=0.1,
+                 n_heads=8, pos_embed=True):
+        # d_out = d_model * n_heads
+        super().__init__()
+        self.d_model = d_model
+        self.d_inp = d_inp
+        self.d_ffn = d_ffn
+        self.dropout = dropout
+        self.n_heads = n_heads
+        self.d_out = self.d_model * self.n_heads
+        
+        # cross attention
+        self.cross_attn = MHCA_ein(self.n_heads, self.d_inp, self.d_out, n_k, pos_embed=pos_embed)
+        self.dropout1 = nn.Dropout(self.dropout)
+        self.norm1 = nn.LayerNorm(self.d_inp)
+        
+        # ffn
+        self.linear1 = nn.Linear(self.d_inp, self.d_ffn)
+        self.activation = nn.ReLU()
+        self.dropout3 = nn.Dropout(self.dropout)
+        self.linear2 = nn.Linear(self.d_ffn, self.d_inp)
+        self.dropout4 = nn.Dropout(self.dropout)
+        self.norm3 = nn.LayerNorm(self.d_inp)
+    
+    def forward_ffn(self, tgt):
+        tgt2 = self.linear2(self.dropout3(self.activation(self.linear1(tgt))))
+        tgt = tgt + self.dropout4(tgt2)
+        tgt = self.norm3(tgt)
+        return tgt
+    
+    def forward(self, query, key, value):
+        # cross-attention
+        tgt = self.cross_attn(query, key, value)
+        query = tgt + self.dropout1(query)
+        query = self.norm1(query)
+        
+        # ffn
+        query = self.forward_ffn(query)
+        
+        return query
+        
+class TransformerEncoderLayerOri(nn.Module):
+    def __init__(self, d_inp, d_model, d_ffn=1024,
+                 dropout=0.1,
                  n_heads=8):
         # d_out = d_model * n_heads
         super().__init__()
@@ -778,7 +821,7 @@ class TransformerEncoderLayer(nn.Module):
         self.d_out = self.d_model * self.n_heads
         
         # cross attention
-        self.cross_attn = MHCA_ein(self.n_heads, self.d_inp, self.d_out, n_k)
+        self.cross_attn = MHCA(self.n_heads, self.d_inp, self.d_out)
         self.dropout1 = nn.Dropout(self.dropout)
         self.norm1 = nn.LayerNorm(self.d_inp)
         
@@ -868,13 +911,14 @@ class MHCA(nn.Module):
         return x
 
 class MHCA_ein(nn.Module):
-    def __init__(self, num_heads, inp_dim, hid_dim, n):
+    def __init__(self, num_heads, inp_dim, hid_dim, n, pos_embed=True):
         super().__init__()
         self.hid_dim = hid_dim
         # self.v_dim = v_dim
         self.inp_dim = inp_dim
         self.n_heads = num_heads
         self.n = n
+        self.pos_embed_bool = pos_embed
         
         assert self.hid_dim % self.n_heads == 0
         
@@ -897,10 +941,9 @@ class MHCA_ein(nn.Module):
         V = rearrange(V, "b n (h d) -> b h n d", h=h)
         
         energy = einsum("b h i d, b h j d -> b h i j", Q, K) / self.scale
-        if self.pos_embed is not None: 
-#            print('energy', energy.shape)
-#            print("self.pos_embed", self.pos_embed.shape)
-#            print("add pos embedding")
+        # print("pos_embed_bool", self.pos_embed_bool)
+        
+        if self.pos_embed is not None and self.pos_embed_bool: 
             energy = energy + self.pos_embed
         attn = torch.softmax(energy, dim=-1)
         out = einsum("b h i j, b h j d -> b h i d", attn, V)
@@ -1083,7 +1126,7 @@ class DLA_PlanA(BaseModelPlanA):
         
         self.transformer = nn.ModuleList(
             [TransformerEncoder(
-                TransformerEncoderLayer(d_inp=16*(2**i), d_model=4*(2**i)), num_layers=3
+                TransformerEncoderLayerOri(d_inp=16*(2**i), d_model=4*(2**i)), num_layers=3
                 ) for i in range(6)])
         self.cat_layer = nn.ModuleList(
             [nn.Sequential(nn.Linear(16*(2**(i+1)), 32*(2**(i+1))),
@@ -1216,7 +1259,7 @@ class DLA_PlanAWindow(BaseModelPlanA):
         
         self.transformer = nn.ModuleList(
             [TransformerEncoder(
-                TransformerEncoderLayer(d_inp=16*(2**i), d_model=4*(2**i), n_k=7*self.K_list[i]*(1 + 2 * (self.kernel_list[i]//2))**2), num_layers=3
+                TransformerEncoderLayer(d_inp=16*(2**i), d_model=4*(2**i), n_k=opt.num_classes*self.K_list[i]*(1 + 2 * (self.kernel_list[i]//2))**2, pos_embed=self.opt.pos_embed), num_layers=3
                  ) for i in range(3)])
         self.cat_layer = nn.ModuleList(
             [nn.Sequential(nn.Linear(16*(2**(i+1)), 32*(2**(i+1))),

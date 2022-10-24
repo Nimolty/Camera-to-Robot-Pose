@@ -9,7 +9,7 @@ from __future__ import division
 from __future__ import print_function
 import os
 # os.environ['CUDA_VISIBLE_DEVICES'] = '2,3'
-os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+os.environ["CUDA_VISIBLE_DEVICES"] = "6"
 # import _init_paths  
 from enum import IntEnum
 
@@ -197,26 +197,19 @@ def main(opt):
         print("length of current found_data", len(found_data))
     
     val_data = find_ndds_seq_data_in_dir(val_data_path)
-    keypoint_names = [
-    "Link0",
-    "Link1",
-    "Link3",
-    "Link4", 
-    "Link6",
-    "Link7",
-    "Panda_hand",
-    ]
-    
+        
     network_input_resolution = (480, 480) # 时刻需要注意这里是width x height
     network_output_resolution = (120, 120) # 时刻需要注意这里是width x height
     input_width, input_height = network_input_resolution
     network_input_resolution_transpose = (input_height, input_width) # centertrack的输入是HxW
     opt = opts().update_dataset_info_and_set_heads_dream(opt, 7, network_input_resolution_transpose)
+    keypoint_names = opts().get_keypoint_names(opt)
+    print("keypoint_names", keypoint_names)
     image_normalization = {"mean" : (0.5, 0.5, 0.5), "stdev" : (0.5, 0.5, 0.5)}
 
     Dataset = CenterTrackSeqDataset(
     found_data, 
-    "Franka_Emika_Panda", 
+    opt.robot, 
     keypoint_names, 
     opt, 
     [0.5, 0.5, 0.5],
@@ -227,7 +220,7 @@ def main(opt):
     ) 
     ValDataset = CenterTrackSeqDataset(
     val_data, 
-    "Franka_Emika_Panda", 
+    opt.robot, 
     keypoint_names, 
     opt, 
     [0.5, 0.5, 0.5],
@@ -254,6 +247,11 @@ def main(opt):
 
     
     print('length dataset', len(Dataset))
+    print("opt.batch_size", opt.batch_size)
+    print("num_epochs", opt.num_epochs)
+    
+    opt.max_iters = (opt.num_epochs * len(Dataset)) // opt.batch_size + 10
+    print("max_iters", opt.max_iters)
     
 #    n_data = len(ValDataset)
 #    n_train_data = int(round(n_data) * 0.01)
@@ -324,7 +322,7 @@ def main(opt):
         opt.load_model = this_path
         print('load_model', opt.load_model)
         print('infer_dataset', opt.infer_dataset)
-        opt.infer_dataset = "/root/autodl-tmp/dream_data/test1001/"
+        opt.infer_dataset = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/syn_test/"
         print('infer_dataset', opt.infer_dataset)
         syn_test_info = inference(opt)
         kp_metrics, pnp_results = syn_test_info[0], syn_test_info[1]
@@ -332,19 +330,19 @@ def main(opt):
 #        
         # inference in pure test set
         print('infer_dataset', opt.infer_dataset)
-        opt.infer_dataset = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/pure_test/"
+        opt.infer_dataset = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/pure_test/"
         print('infer_dataset', opt.infer_dataset)
         pure_test_info = inference(opt)
         kp_metrics_pure, pnp_results_pure = pure_test_info[0], pure_test_info[1]
         save_results(training_log, kp_metrics_pure, pnp_results_pure, mode="pure", writer=writer, epoch=epoch)
 #        
-        # inference in real
+#        # inference in real
         real_test_info = inference_real(opt)
         kp_metrics_real, pnp_results_real = real_test_info[0], real_test_info[1]
         save_results(training_log, kp_metrics_real, pnp_results_real, mode="panda-3cam_realsense", writer=writer, epoch=epoch)
         
         # save in json
-        meta_path = os.path.join(results_path, "info_{}.json".format(epoch))
+        meta_path = os.path.join(results_path, "info_{}.json".format(str(epoch).zfill(2)))
         if os.path.exists(meta_path):
             os.remove(meta_path)
         file_write_meta = open(meta_path, 'w')

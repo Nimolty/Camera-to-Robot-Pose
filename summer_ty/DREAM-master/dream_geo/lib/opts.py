@@ -13,15 +13,18 @@ class opts(object):
     self.parser.add_argument('task', default='',
                              help='ctdet | ddd | multi_pose '
                              '| tracking or combined with ,')
-    self.parser.add_argument('--dataset', default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_0909/",
+    self.parser.add_argument('--dataset', default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_1020/",
                              help='see lib/dataset/dataset_facotry for ' + 
                             'available datasets')
     self.parser.add_argument("--add_dataset", default=None, help="add more data if required")
-    self.parser.add_argument('--val_dataset', default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/valdata_randomtex/")
-    self.parser.add_argument("--infer_dataset", default = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/synthetic_test_1005/")
+    self.parser.add_argument('--val_dataset', default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/franka_validation/")
+    self.parser.add_argument("--infer_dataset", default = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/syn_test/")
+    self.parser.add_argument("--syn_dataset", default=None)
+    self.parser.add_argument("--pure_dataset", default=None)
     self.parser.add_argument('--root_dir', type=str, default="/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/")
     self.parser.add_argument('--test_dataset', default='',
                              help='coco | kitti | coco_hp | pascal')
+    self.parser.add_argument("--pos_embed", action="store_false")
     self.parser.add_argument('--exp_id', default='default')
     self.parser.add_argument('--test', action='store_true') 
     self.parser.add_argument('--debug', type=int, default=0,
@@ -42,6 +45,7 @@ class opts(object):
                                   'set load_model to model_last.pth '
                                   'in the exp dir if load_model is empty.')
     self.parser.add_argument('--model_last_pth', type=str, default='') 
+    self.parser.add_argument("--robot", type=str, default="Franka_Emika_Panda")
 
     # system
     self.parser.add_argument('--gpus', default='0', 
@@ -134,9 +138,9 @@ class opts(object):
                              help='drop learning rate by 10.')
     self.parser.add_argument('--save_point', type=str, default='90',
                              help='when to save the model to disk.')
-    self.parser.add_argument('--num_epochs', type=int, default=70,
+    self.parser.add_argument('--num_epochs', type=int, default=40,
                              help='total training epochs.')
-    self.parser.add_argument('--max_iters', type=float, default=1.5e5, help="dacay the learning rate")
+    self.parser.add_argument('--max_iters', type=float, default=3e5, help="dacay the learning rate")
     self.parser.add_argument('--batch_size', type=int, default=16,
                              help='batch size')
     self.parser.add_argument('--master_batch_size', type=int, default=-1,
@@ -401,7 +405,46 @@ class opts(object):
     print('head conv', opt.head_conv)
 
     return opt
-
+  
+  def get_keypoint_names(self, opt):
+      if opt.robot == "Franka_Emika_Panda":
+          keypoint_names =   [
+          "Link0",
+          "Link1",
+          "Link3",
+          "Link4", 
+          "Link6",
+          "Link7",
+          "Panda_hand",
+          ]
+      elif opt.robot == "KUKA_LBR_Iiwa14":
+          keypoint_names = [
+          "Link0", 
+          "Link1",
+          "Link2",
+          "Link3",
+          "Link4",
+          "Link5",
+          "Link6",
+          "Link7",
+          "Kuka_hand",
+          ]
+      elif opt.robot == "UR5e":
+          keypoint_names = [
+          "Link0",
+          "Link1",
+          "Link2",
+          "Link3",
+          "Link4",
+          "Link5",
+          "Link6",
+          "Ur_hand",
+          ]
+      else:
+          raise ValueError
+      return keypoint_names
+          
+  
   def update_dataset_info_and_set_heads_dream(self, opt, num_categories, default_resolution):
     opt.num_classes = num_categories if opt.num_classes < 0 else opt.num_classes
     # input_h(w): opt.input_h overrides opt.input_res overrides dataset default
@@ -461,6 +504,7 @@ class opts(object):
     print('head conv', opt.head_conv)
 
     return opt
+  
 
   def init(self, args=''):
     # only used in demo

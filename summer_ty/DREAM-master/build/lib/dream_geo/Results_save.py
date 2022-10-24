@@ -190,11 +190,10 @@ def save_inference(opt):
     # dirlist.sort()
     print('dirlist', dirlist)
     for idx, each_dir in enumerate(tqdm(dirlist)):
-#        if idx < length:
-#            continue
-        
-        if idx < 32 or idx > 35:
+        if (idx + 1) % 5 != 0 or idx < len(dirlist) - 5:
             continue
+#        if idx < 32 or idx > 35:
+#            continue
         
         print('idx', idx)
         
@@ -222,29 +221,32 @@ def save_inference(opt):
         # training_log["validation"]["mean_valid_loss_reg"] = mean_valid_reg_loss_per_batch
         
         # inference in synthetic test set
-        print('infer_dataset', opt.infer_dataset)
-        opt.infer_dataset = "/root/autodl-tmp/dream_data/test1001/"
-        print('infer_dataset', opt.infer_dataset)
-        syn_test_info = inference(opt)
-        kp_metrics, pnp_results = syn_test_info[0], syn_test_info[1]
-        print("kp_metrics", kp_metrics)
-        save_results(training_log, kp_metrics, pnp_results, mode="synthetic")
+#        print('infer_dataset', opt.infer_dataset)
+#        opt.infer_dataset = ""/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/syn_test/"
+#        print('infer_dataset', opt.infer_dataset)
+#        syn_test_info = inference(opt)
+#        kp_metrics, pnp_results = syn_test_info[0], syn_test_info[1]
+#        print("kp_metrics", kp_metrics)
+#        save_results(training_log, kp_metrics, pnp_results, mode="synthetic")
         
 #        print('opt.is_real', opt.is_real)
 #        opt.is_real = "panda-3cam_realsense"
 #        print('opt.is_real', opt.is_real)
 #        real_test_info = inference_real(opt)
 #        kp_metrics_real, pnp_results_real = real_test_info[0], real_test_info[1]
-#        save_results(training_log, kp_metrics_real, pnp_results_real, mode="panda-3cam_realsense", writer=writer, epoch=epoch)
-#        
+#        save_results(training_log, kp_metrics_real, pnp_results_real, mode="panda-3cam_realsense")
+        
 #        # inference in pure test set
 #        print('infer_dataset', opt.infer_dataset)
-#        opt.infer_dataset = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/pure_test/"
+#        opt.infer_dataset = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/pure_test/"
 #        print('infer_dataset', opt.infer_dataset)
 #        pure_test_info = inference(opt)
 #        kp_metrics_pure, pnp_results_pure = pure_test_info[0], pure_test_info[1]
 #        save_results(training_log, kp_metrics_pure, pnp_results_pure, mode="pure")
 #        
+
+
+    
         # inference in kinect360
         print('opt.is_real', opt.is_real)
         opt.is_real = "panda-3cam_kinect360"
