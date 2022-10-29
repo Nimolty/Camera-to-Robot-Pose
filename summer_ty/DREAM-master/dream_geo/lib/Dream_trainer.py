@@ -208,6 +208,10 @@ class Trainer(object):
                     repro_hm_cls = batch["repro_belief_maps_cls"].to(device)
                     # print("pre_hm_cls.shape", pre_hm_cls.shape)
                     outputs = model(next_img, pre_img, pre_hm, repro_hm, pre_hm_cls, repro_hm_cls)
+                elif phase == "ablation_wo_shared" or phase == "ablation_shared":
+                    outputs = model(next_img, pre_img, pre_hm)
+                elif phase == "ablation_shared_repro":
+                    outputs = model(next_img, pre_img, pre_hm, repro_hm)
                 else:
                     raise ValueError
                 # outputs = model(next_img, pre_img, pre_hm, repro_hm)
@@ -266,6 +270,7 @@ class Trainer(object):
 #            print('pre_img.size', pre_img.shape)
 #            print('pre_hm.size', pre_hm.shape)
 #            print('next_img.size', next_img.shape)
+#            print("phase", phase)
             if phase == "PlanA":
                 outputs = model(next_img, pre_img, pre_hm, repro_hm)
             elif phase == "CenterTrack+Repro":
@@ -282,10 +287,14 @@ class Trainer(object):
                 pre_hm_cls = batch["prev_belief_maps_cls"].to(device)
                 repro_hm_cls = batch["repro_belief_maps_cls"].to(device)
                 # print("pre_hm_cls.shape", pre_hm_cls.shape)
-                
                 outputs = model(next_img, pre_img, pre_hm, repro_hm, pre_hm_cls, repro_hm_cls)
                 self.adapt_lr(epoch, batch_idx)
-                
+            elif phase == "ablation_wo_shared" or phase == "ablation_shared":
+                outputs = model(next_img, pre_img, pre_hm)
+                self.adapt_lr(epoch, batch_idx)
+            elif phase == "ablation_shared_repro":
+                outputs = model(next_img, pre_img, pre_hm, repro_hm)
+                self.adapt_lr(epoch, batch_idx)
             else:
                 raise ValueError 
 #            outputs = model(next_img)

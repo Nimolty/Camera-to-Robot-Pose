@@ -682,6 +682,15 @@ class CenterTrackSeqDataset(TorchDataset):
                 new_name = str(ind - self.seq_frame).zfill(4)
                 prev_frame_img_path = datum["next_frame_img_path"].replace(old_name + "_color.png", new_name+"_color.png")
                 prev_frame_data_path = datum["next_frame_data_path"].replace(old_name + "_meta.json", new_name + "_meta.json")
+                if self.opt.phase == "CenterNet":
+                # [0,1],[1,2],让centernet拿到0
+                    # print("1!!!!!!!!!!!!CenterNet!!!!!!!!!!!!!1")
+                    next_frame_name = prev_frame_name
+                    next_frame_img_path = prev_frame_img_path
+                    next_frame_data_path = prev_frame_data_path
+                    
+                    assert next_frame_img_path == prev_frame_img_path
+                    assert next_frame_data_path == prev_frame_data_path
             else:
                 prev_frame_name = datum["prev_frame_name"]
                 prev_frame_img_path = datum["prev_frame_img_path"]

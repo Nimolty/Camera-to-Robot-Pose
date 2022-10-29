@@ -169,6 +169,12 @@ class BaseModelPlanA(nn.Module):
       if (pre_hm is not None) or (pre_img is not None) or (repro_hm is not None) or (pre_hm_cls is not None) or (repro_hm_cls is not None):
         feats, pre_topk_int, repro_topk_int = self.imgpre2feats(x, pre_img, pre_hm, repro_hm, pre_hm_cls, repro_hm_cls)
       else:
+        # if self.opt.phase == "ablation_wo_shared" or self.opt.phase == "abalation_shared":
+        #     feats, _, _ = self.img2feats(x=x, pre_img=pre_img,pre_hm=pre_hm)
+        # elif self.opt.phase == "ablation_shared_repro":
+        #     feats, _, _ = self.img2feats(x=x, pre_img=pre_img,pre_hm=pre_hm,repro_hm=repro_hm)
+        # else:
+        #     feats = self.img2feats(x)
         feats = self.img2feats(x)
       out = []
       if self.opt.model_output_list:
@@ -183,7 +189,7 @@ class BaseModelPlanA(nn.Module):
           z = {}
           for head in self.heads:
               z[head] = self.__getattr__(head)(feats[s])
-          # z["pre_hm_topk_ind"] = pre_topk_int 
+          # z["repro_hm_topk_ind"] = repro_topk_int 
           out.append(z)
           # print('z', z.keys())
       return out

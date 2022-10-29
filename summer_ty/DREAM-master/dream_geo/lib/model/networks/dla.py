@@ -1222,6 +1222,104 @@ class DLA_PlanACAT(BaseModelPlanA):
 
         return [y[-1]],None, None
 
+class DLA_PlanAAblation(BaseModelPlanA):
+    def __init__(self, num_layers, heads, head_convs, opt):
+        super(DLA_PlanAAblation, self).__init__(
+            heads, head_convs, 1, 64 if num_layers == 34 else 128, opt=opt)
+        down_ratio=4
+        self.opt = opt
+        self.node_type = DLA_NODE[opt.dla_node]
+        print(f"####################{self.opt.phase}#########################")
+        # print('Using node type:', self.node_type)
+        # print('this one')
+        self.first_level = int(np.log2(down_ratio))
+        self.last_level = 5
+        print('num_layers', num_layers)
+        self.base = globals()['dla{}'.format(num_layers)](
+            pretrained=(opt.load_model == ''), opt=opt)
+        
+        if self.opt.phase == "ablation_wo_shared":
+            self.base1 = globals()['dla{}'.format(num_layers)](
+                pretrained=(opt.load_model == ''), opt=opt)
+        
+        # print(self.base)
+        channels = self.base.channels
+        scales = [2 ** i for i in range(len(channels[self.first_level:]))]
+        
+        self.dla_up = DLAUp(
+            self.first_level, channels[self.first_level:], scales,
+            node_type=self.node_type)
+        out_channel = channels[self.first_level]
+
+        self.ida_up = IDAUp(
+            out_channel, channels[self.first_level:self.last_level], 
+            [2 ** i for i in range(self.last_level - self.first_level)],
+            node_type=self.node_type)
+        
+        self.cat_layer = nn.ModuleList(
+            [nn.Sequential(nn.Linear(16*(2**(i+1)), 32*(2**(i+1))),
+                           nn.ReLU(),
+                           nn.Linear(32*(2**(i+1)), 16*(2**(i)))) for i in range(6)])
+
+
+    def imgpre2feats(self, x, pre_img=None, pre_hm=None, repro_hm=None, pre_hm_cls = None, repro_hm_cls=None):
+        x_out = []
+        if self.opt.phase == "ablation_wo_shared":
+            x_pre = self.base(pre_img=pre_img, pre_hm=pre_hm)
+            x_cur = self.base1(pre_img=x)
+            # print("##################### Ablation_wo_shared################### ")
+            assert len(x_pre) == len(x_cur)
+            for i in range(len(x_cur)):
+                pre_feats, cur_feats = x_pre[i], x_cur[i]
+                pre_f = pre_feats.permute(0, 2, 3, 1).contiguous()
+                cur_f = cur_feats.permute(0, 2, 3, 1).contiguous()
+                out = self.cat_layer[i](torch.cat([pre_f, cur_f], dim=-1))
+                out = out.permute(0, 3, 1, 2).contiguous()
+                assert out.shape == x_pre[i].shape
+                x_out.append(out)
+        elif self.opt.phase == "ablation_shared":
+            x_pre = self.base(pre_img=pre_img, pre_hm=pre_hm)
+            x_cur = self.base(pre_img=x)
+            # print("##################### Ablation_shared################### ")
+            assert len(x_pre) == len(x_cur)
+            for i in range(len(x_cur)):
+                pre_feats, cur_feats = x_pre[i], x_cur[i]
+                pre_f = pre_feats.permute(0, 2, 3, 1).contiguous()
+                cur_f = cur_feats.permute(0, 2, 3, 1).contiguous()
+                out = self.cat_layer[i](torch.cat([pre_f, cur_f], dim=-1))
+                out = out.permute(0, 3, 1, 2).contiguous()
+                assert out.shape == x_pre[i].shape
+                x_out.append(out)
+        elif self.opt.phase == "ablation_shared_repro":
+            x_pre = self.base(pre_img=pre_img, pre_hm=pre_hm)
+            x_cur = self.base(pre_img=x, pre_hm=repro_hm)
+            # print("##################### Ablation_shared_repro################### ")
+            assert len(x_pre) == len(x_cur)
+            for i in range(len(x_cur)):
+                pre_feats, cur_feats = x_pre[i], x_cur[i]
+                pre_f = pre_feats.permute(0, 2, 3, 1).contiguous()
+                cur_f = cur_feats.permute(0, 2, 3, 1).contiguous()
+                out = self.cat_layer[i](torch.cat([pre_f, cur_f], dim=-1))
+                out = out.permute(0, 3, 1, 2).contiguous()
+                assert out.shape == x_pre[i].shape
+                x_out.append(out)
+        else:
+            raise ValueError
+        
+        x_out = self.dla_up(x_out)
+        y = []
+        for i in range(self.last_level - self.first_level):
+            y.append(x_out[i].clone())
+        self.ida_up(y, 0, len(y))
+
+        return [y[-1]], None, None
+        
+
+
+
+
+
+
 class DLA_PlanAWindow(BaseModelPlanA):
     def __init__(self, num_layers, heads, head_convs, opt):
         super(DLA_PlanAWindow, self).__init__(
@@ -1278,7 +1376,18 @@ class DLA_PlanAWindow(BaseModelPlanA):
         assert len(x_pre) == len(x_cur)
         for i in range(len(x_cur)):
             pre_feats, cur_feats = x_pre[i], x_cur[i]
-            if i <= 2:
+            if i == 0:
+                pre_topk_indices, repro_topk_indices = get_topk_index(pre_hm_cls, repro_hm_cls, self.K_list[i])  # B_hm x (C_hm * K) x 2
+                transformer = self.transformer[i]
+                pre_key, prev_batch_id, prev_feat_id_1 = get_topk_features_scale(pre_feats, pre_topk_indices, scale_num=self.scale_list[i], kernel=self.kernel_list[i])
+                cur_query, cur_batch_id, cur_feat_id_1 = get_topk_features_scale(cur_feats, repro_topk_indices, scale_num=self.scale_list[i], kernel=self.kernel_list[i])
+                out = transformer(cur_query, pre_key, pre_key)
+                out = substitute_topk_features_scale(out, cur_feats, cur_batch_id, cur_feat_id_1, self.cat_layer[i])
+                # print(out.shape)
+                assert out.shape == x_pre[i].shape
+                x_out.append(out)
+                # x_out.append(pre_feats+cur_feats)
+            elif 1 <= i <= 2:
                 pre_topk_indices, repro_topk_indices = get_topk_index(pre_hm_cls, repro_hm_cls, self.K_list[i])  # B_hm x (C_hm * K) x 2
                 transformer = self.transformer[i]
                 pre_key, prev_batch_id, prev_feat_id = get_topk_features_scale(pre_feats, pre_topk_indices, scale_num=self.scale_list[i], kernel=self.kernel_list[i])
@@ -1288,7 +1397,6 @@ class DLA_PlanAWindow(BaseModelPlanA):
                 # print(out.shape)
                 assert out.shape == x_pre[i].shape
                 x_out.append(out)
-                # x_out.append(pre_feats+cur_feats)
             else:
                 pre_f = pre_feats.permute(0, 2, 3, 1).contiguous()
                 cur_f = cur_feats.permute(0, 2, 3, 1).contiguous()
@@ -1305,7 +1413,6 @@ class DLA_PlanAWindow(BaseModelPlanA):
             y.append(x_out[i].clone())
         self.ida_up(y, 0, len(y))
 
-        return [y[-1]], prev_feat_id, cur_feat_id
-        
+        return [y[-1]], prev_feat_id_1, cur_feat_id_1
         
         

@@ -11,7 +11,7 @@ from __future__ import print_function
 # import tools._init_paths as _init_paths
 
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '6'
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2"
 import sys
 import cv2
@@ -26,6 +26,7 @@ import dream_geo as dream
 from ruamel.yaml import YAML
 from PIL import Image as PILImage
 import time
+import random
 
 
 
@@ -57,10 +58,14 @@ def find_dataset(opt):
 
 def inference(opt):
     keypoint_names = opts().get_keypoint_names(opt)
+    print("inference dataset", opt.infer_dataset)
     with torch.no_grad():
         found_videos = find_dataset(opt)
+        print("length of found_videos", len(found_videos))
+        sample_found_videos = random.sample(found_videos, 150)
+        print("length of sample found videos", len(sample_found_videos))
         json_list, detected_kps_list = [], []
-        for video_idx, found_video_0 in tqdm(enumerate(found_videos)): # 全部Inference！
+        for video_idx, found_video_0 in tqdm(enumerate(sample_found_videos)): # 全部Inference！
         # found_video_0 = found_videos[j]
         # print('found_video_0', found_video_0) 
         # print('json_path', found_video_0[1])
@@ -126,11 +131,12 @@ def inference_real(opt):
         real_data = parser.load(f.read().replace('\t', ' '))
         real_jsons = real_data["json_paths"]
         real_images = real_data["img_paths"] # 为一个list里面是10个video
-    json_list, detected_kps_list = [], []
-    
+    json_list, detected_kps_list, d_lst = [], [], []
+    count = 0
     with torch.no_grad():
         for idx, (video_images, video_jsons) in tqdm(enumerate((zip(real_images, real_jsons)))):
             if idx >= 0: 
+                count = idx
                 detector = DreamDetector(opt,real_keypoint_names, is_real=opt.is_real, is_ct=True, idx=idx)
                 assert len(video_images) == len(video_jsons)
                 length = len(video_images)
@@ -140,6 +146,15 @@ def inference_real(opt):
                         continue 
                     
                     img = cv2.imread(img_path)
+                    
+                    # 双边高斯平滑
+                    # save_dir = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/ct_infer_img/gaussian_k3"
+                    # dream.utilities.exists_or_mkdir(save_dir)
+                    # img = cv2.bilateralFilter(img,5,10,10)
+                    # img = cv2.GaussianBlur(img,(3, 3),10)
+                    # cv2.imwrite(os.path.join(save_dir, f"{idx}_{str(j).zfill(5)}_gaussian_k3.png"), img)
+
+
 #                    img_resized = cv2.resize(img1, (img1.shape[1]//2, img1.shape[0]//2))
 #                    print("img_resized.shape",img_resized.shape)
 #                    print("img1.shape", img1.shape)
@@ -187,6 +202,8 @@ def inference_real(opt):
                     np.savetxt(output_dir + 'txt', detected_kps_np)
                     json_list.append(json_path)
                     detected_kps_list.append(detected_kps_np) 
+                    # print("shape", detected_kps_np.shape)
+                    # d_lst.append(detected_kps_np.tolist())
         
         exp_dir = opt.exp_dir
         pth_order = opt.load_model.split('/')[-1]
@@ -195,6 +212,28 @@ def inference_real(opt):
         output_dir = os.path.join(exp_dir, exp_id,'results', pth_order, '')
         dream.utilities.exists_or_mkdir(output_dir)
         
+        count = 5
+        # path_meta = os.path.join(output_dir, f"dt_and_json_{count}.json")
+        if opt.is_real == "panda-3cam_realsense":
+            path_meta = os.path.join(output_dir, f"dt_and_json.json")
+        else:
+            path_meta = os.path.join(output_dir, f"dt_and_json_{opt.is_real}.json")
+        if not os.path.exists(path_meta):
+            file_write_meta = open(path_meta, 'w')
+            meta_json = dict()
+            meta_json["dt"] = np.array(detected_kps_list).tolist()
+            meta_json["json"] = json_list
+
+            json_save = json.dumps(meta_json, indent=1)
+            file_write_meta.write(json_save)
+            file_write_meta.close()
+
+        parser = YAML(typ="safe")
+        with open(path_meta, "r") as f:
+            real_data = parser.load(f.read().replace('\t', ' '))
+            detected_kps_list = real_data["dt"]
+            json_list = real_data["json"] 
+
         analysis_info = dream.analysis.analyze_ndds_center_dream_dataset(
         json_list, # 在外面直接写一个dataset就好了，需要注意它的debug_node为LIGHT
         detected_kps_list,
@@ -211,8 +250,8 @@ def inference_real(opt):
 
 if __name__ == "__main__":
     opt = opts().init_infer(7, (480, 480))
-    # inference(opt)
-    inference_real(opt)
+    inference(opt)
+    # inference_real(opt)
     
 
 

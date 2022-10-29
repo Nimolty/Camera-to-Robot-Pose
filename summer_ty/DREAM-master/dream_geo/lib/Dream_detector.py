@@ -70,7 +70,7 @@ class DreamDetector(object):
         self.phase = opt.phase
         self.dataset_path = "/root/autodl-tmp/dream_data/data/real"
         # self.output_dir = output_dir.split('/')[-2]
-        self.output_dir = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/ct_infer_img/"
+        self.output_dir = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/ct_infer_img/overlay_1026"
         
         # self.output_dir = output_dir.split('/')[-1][:6]
         # self.output_dir = f"/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/ct_infer_img/real/{output_dir}"
@@ -182,9 +182,9 @@ class DreamDetector(object):
                     if i == 1:
                         pre_hms, repro_hms, pre_hms_cls, repro_hms_cls, pre_inds = self._get_additional_inputs(
                         self.tracker.tracks, meta, with_hm=not self.opt.zero_pre_hm) 
-#                        _, _,_, _, pre_inds =  self._get_additional_inputs(
-#                        self.tracker.tracks, meta, with_hm=not self.opt.zero_pre_hm)
-#                        pre_hms, repro_hms, pre_hms_cls, repro_hms_cls = self._get_initial_gt_inputs(json_path, meta)
+                      #  _, _,_, _, pre_inds =  self._get_additional_inputs(
+                      #  self.tracker.tracks, meta, with_hm=not self.opt.zero_pre_hm)
+                      #  pre_hms, repro_hms, pre_hms_cls, repro_hms_cls = self._get_initial_gt_inputs(json_path, meta)
                     else:
 #                        m1 = time.time()
                         _, _, _, _, pre_inds = self._get_additional_inputs(
@@ -259,7 +259,7 @@ class DreamDetector(object):
             output, dets, forward_time, hms = self.process(
               images, self.pre_images, pre_hms, repro_hms, pre_inds, return_time=True, pre_hms_cls=pre_hms_cls, repro_hms_cls=repro_hms_cls)
             
-            # topk_inp_coords = output["pre_hm_topk_ind"]
+            # topk_inp_coords = output["repro_hm_topk_ind"]
             net_time += forward_time - pre_process_time
             decode_time = time.time()
             dec_time += decode_time - forward_time
@@ -302,16 +302,17 @@ class DreamDetector(object):
             # add tracking id to results
             results = self.tracker.step(results, public_det)
             self.pre_images = images
-            # self.pre_image = Image.fromarray(np.uint8(image)) 
+            self.pre_image = Image.fromarray(np.uint8(image)) 
 
 
 
         tracking_time = time.time()
         track_time += tracking_time - end_time
         tot_time += tracking_time - start_time
-        # save_dir = "/root/autodl-tmp/camera_to_robot_pose/topk_check/"
-#        topk_inp_coords = self.transform_topk_coords_to_input(topk_inp_coords, meta)
-#        self._get_heatmap_and_topk(topk_inp_coords, pre_hms, save_dir, i)
+        # save_dir = f"/root/autodl-tmp/camera_to_robot_pose/topk_check/{self.idx}/"
+        # dream.utilities.exists_or_mkdir(save_dir)
+        # topk_inp_coords = self.transform_topk_coords_to_input(topk_inp_coords, meta)
+        # self._get_heatmap_and_topk(topk_inp_coords, pre_hms, save_dir, i)
         # if self.opt.debug >= 1:
         #     self.show_results(self.debugger, image, results)
         self.cnt += 1
@@ -336,9 +337,10 @@ class DreamDetector(object):
         
 #        print("detected_kps", self.detected_kps)
         
-#        output_dirs = {head : os.path.join(self.output_dir, f"{self.is_real}_{head}_overlay") for head in ["whole", "gt", "dt"]}
-#        next_img_PIL = Image.fromarray(np.uint8(image))
-#        self._get_overlay_imgs(hms, next_img_PIL, self.detected_kps, self.pre_json_path, meta, output_dirs, i)        
+        # output_dirs = {head : os.path.join(self.output_dir, f"{self.is_real}_{head}_overlay") for head in ["whole", "gt", "dt"]}
+        # # self.exists_or_mkdir(output_dirs)
+        # next_img_PIL = Image.fromarray(np.uint8(image))
+        # self._get_overlay_imgs(hms, next_img_PIL, self.detected_kps, self.pre_json_path, meta, output_dirs, i)        
 
         return ret, self.detected_kps
 
@@ -801,8 +803,8 @@ class DreamDetector(object):
             )
         pre_hm_img.save(save_dir + f"{str(i).zfill(5)}_prehm.png")
         overlay_whole_image.save(save_dir + f"{str(i).zfill(5)}_topkimg.png")
-        print("Success save img and hms")
-        print("topk.shape", topk_indices.shape)
+        # print("Success save img and hms")
+        # print("topk.indices", topk_indices)
         
         
         
@@ -854,7 +856,7 @@ class DreamDetector(object):
             )
             
             overlay_whole_image = dream.image_proc.overlay_points_on_image(
-                img,
+                blend_image,
                 [ct_gt, ct_dt],
                 [self.keypoint_names[idx]] * 2,
                 annotation_color_dot=["green", "red"],
@@ -869,9 +871,9 @@ class DreamDetector(object):
         overlay_whole_mosaic = dream.image_proc.mosaic_images(
             overlay_whole_images, rows=2, cols=4, inner_padding_px=10
         )
-        hm_whole_mosaic = dream.image_proc.mosaic_images(
-            hms_imgs, rows=2, cols=4, inner_padding_px=10
-        )
+        # hm_whole_mosaic = dream.image_proc.mosaic_images(
+        #     hms_imgs, rows=2, cols=4, inner_padding_px=10
+        # )
         overlay_blend_mosaic = dream.image_proc.mosaic_images(
             overlay_blend_images, rows=2, cols=4, inner_padding_px=10
         )
@@ -885,7 +887,7 @@ class DreamDetector(object):
         save_dir = os.path.join(output_dirs["whole"], str(self.idx).zfill(2))
         self.exists_or_mkdir(save_dir)
         overlay_whole_mosaic.save(os.path.join(save_dir, f"{str(i).zfill(5)}_overlay.png"))
-        hm_whole_mosaic.save(os.path.join(save_dir, f"{str(i).zfill(5)}_heatmap.png"))
+        # hm_whole_mosaic.save(os.path.join(save_dir, f"{str(i).zfill(5)}_heatmap.png"))
         overlay_blend_mosaic.save(os.path.join(save_dir, f"{str(i).zfill(5)}_blend.png"))
 #        overlay_gt_mosaic.save(output_dirs["gt"])
 #        overlay_dt_mosaic.save(output_dirs["dt"]) 
@@ -1048,6 +1050,10 @@ class DreamDetector(object):
             output = self.model(images, pre_images, pre_hms, repro_hms, pre_hms_cls, repro_hms_cls)[-1]
         elif self.phase == "PlanACAT":
             output = self.model(images, pre_images, pre_hms)[-1]
+        elif self.phase == "ablation_wo_shared" or self.phase == "ablation_shared":
+            output = self.model(images, pre_images, pre_hms)[-1]
+        elif self.phase == "ablation_shared_repro":
+            output = self.model(images, pre_images, pre_hms, repro_hms)[-1]
         else:
             raise ValueError
         # output = self.model(images)[-1]

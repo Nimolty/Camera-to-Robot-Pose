@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 from pyrr import Quaternion
 from copy import deepcopy
+import torch
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -284,8 +285,49 @@ def is_pnp(prev_kp_pos_gt, prev_kp_projs_gt, next_kp_pos_gt, prev_kp_projs_all, 
     else:
 #        return None, None
         return prev_kp_projs_all, prev_kp_projs_all
-    
-    
+
+def quaternion_to_matrix(quaternions: torch.Tensor) -> torch.Tensor:
+    r, i, j, k = torch.unbind(quaternions, -1)
+    two_s = 2.0 / (quaternions * quaternions).sum(-1)
+
+    o = torch.stack(
+        (
+            1 - two_s * (j * j + k * k),
+            two_s * (i * j - k * r),
+            two_s * (i * k + j * r),
+            two_s * (i * j + k * r),
+            1 - two_s * (i * i + k * k),
+            two_s * (j * k - i * r),
+            two_s * (i * k - j * r),
+            two_s * (j * k + i * r),
+            1 - two_s * (i * i + j * j),
+        ),
+        -1,
+    )
+    return o.reshape(quaternions.shape[:-1] + (3, 3))
+
+def add_from_pose_tensor(translation, quaternion, keypoint_positions_wrt_cam_gt, camera_K):
+    #print(translation,quaternion)
+    transform = np.eye(4)
+    transform[:3, :3] = quaternion_to_matrix(quaternion).numpy()
+    transform[:3, -1] = np.array(translation).squeeze()
+    kp_pos_gt_homog = np.hstack(
+        (
+            keypoint_positions_wrt_cam_gt,
+            np.ones((keypoint_positions_wrt_cam_gt.shape[0], 1)),
+        )
+    )
+    kp_pos_aligned = np.transpose(np.matmul(transform, np.transpose(kp_pos_gt_homog)))[
+        :, :3
+    ]
+    #print(kp_pos_aligned,keypoint_positions_wrt_cam_gt)
+    # The below lines were useful when debugging pnp ransac, so left here for now
+    # projs = point_projection_from_3d(camera_K, kp_pos_aligned)
+    # temp = np.linalg.norm(kp_projs_est_pnp - projs, axis=1) # all of these should be below the inlier threshold above!
+    kp_3d_errors = kp_pos_aligned - keypoint_positions_wrt_cam_gt
+    kp_3d_l2_errors = np.linalg.norm(kp_3d_errors, axis=1)
+    add = np.mean(kp_3d_l2_errors)
+    return add
     
     
     

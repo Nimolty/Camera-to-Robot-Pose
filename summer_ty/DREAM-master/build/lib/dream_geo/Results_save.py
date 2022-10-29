@@ -11,11 +11,11 @@ from __future__ import print_function
 
 # import _init_paths
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '6'  
+os.environ['CUDA_VISIBLE_DEVICES'] = '5'  
 from enum import IntEnum
 
 import albumentations as albu
-import numpy as np
+import numpy as np 
 from PIL import Image as PILImage
 import torch
 from torch.utils.data import Dataset as TorchDataset
@@ -190,7 +190,7 @@ def save_inference(opt):
     # dirlist.sort()
     print('dirlist', dirlist)
     for idx, each_dir in enumerate(tqdm(dirlist)):
-        if (idx + 1) % 5 != 0 or idx < len(dirlist) - 5:
+        if (idx + 1) != 25:
             continue
 #        if idx < 32 or idx > 35:
 #            continue

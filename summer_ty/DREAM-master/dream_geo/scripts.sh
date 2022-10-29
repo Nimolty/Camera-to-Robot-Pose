@@ -155,7 +155,7 @@ python Dream_main_ku.py tracking --exp_id 44 --pre_hm --same_aug --hm_disturb 0.
 python Dream_main_ku.py tracking --exp_id 46 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlapawd_34 --phase PlanA_win --dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1019_ur5e/" --val_dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/ur5e_validation/" --syn_dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/ur5e_syn_test/" --pure_dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/ur5e_pure_test/" --is_real panda-3cam_realsense --num_epochs 40 --robot UR5e --num_classes 8 --pos_embed
 
 # 混合数据，有pos_embed
-python Dream_main.py tracking --exp_id 50 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlapawd_34 --phase PlanA_win --dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_1020/" --add_dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/near_franka_data_1024/" --is_real panda-3cam_realsense --num_epochs 35
+python Dream_main.py tracking --exp_id 50 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlapawd_34 --phase PlanA_win --dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_1020/" --add_dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/near_franka_data_1024/" --is_real panda-3cam_realsense --num_epochs 35 --resume --model_last_pth model_6.pth
 # 混合数据，没有pos_embed
 python Dream_main.py tracking --exp_id 51 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlapawd_34 --phase PlanA_win --dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_1020/" --add_dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/near_franka_data_1024/" --is_real panda-3cam_realsense --num_epochs 35 --pos_embed
 # 混合数据 centertrack
@@ -163,6 +163,13 @@ python Dream_main.py tracking --exp_id 52 --pre_hm --same_aug --hm_disturb 0.75 
 # 混合数据 centernet
 python Dream_main.py tracking --exp_id 53 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --phase CenterNet --dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_1020/" --add_dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/near_franka_data_1024/" --is_real panda-3cam_realsense --num_epochs 35
 
+
+# 混合数据 alabtion_wo_shared
+python Dream_main.py tracking --exp_id 54 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlaabla_34 --phase ablation_wo_shared --dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_1020/" --add_dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/near_franka_data_1024/" --is_real panda-3cam_realsense 
+# 混合数据 ablation_shared
+python Dream_main.py tracking --exp_id 55 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlaabla_34 --phase ablation_shared --dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_1020/" --add_dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/near_franka_data_1024/" --is_real panda-3cam_realsense 
+# 混合数据 ablation_shared_repro
+python Dream_main.py tracking --exp_id 56 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlaabla_34 --phase ablation_shared_repro --dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_1020/" --add_dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/near_franka_data_1024/" --is_real panda-3cam_realsense 
 
 
 python Results_save.py tracking --exp_id 39 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --arch dlapawd_34 --phase PlanA_win --is_real panda-3cam_realsense
@@ -173,12 +180,26 @@ python Results_save.py tracking --exp_id 41 --pre_hm --same_aug --hm_disturb 0.7
 
 python Results_save.py tracking --exp_id 45 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --arch dlapawd_34 --phase PlanA_win --is_real panda-3cam_realsense --pos_embed
 
-python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/39/ckpt/model_32.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_kinect360
+python Results_save.py tracking --exp_id 50 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --arch dlapawd_34 --phase PlanA_win --is_real panda-3cam_realsense
+
+python Results_save.py tracking --exp_id 51 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --arch dlapawd_34 --phase PlanA_win --is_real panda-3cam_realsense --pos_embed
+
+python Results_save.py tracking --exp_id 52 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --phase CenterTrack --is_real panda-3cam_realsense
+
+python Results_save.py tracking --exp_id 53 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 1 --phase CenterNet --is_real panda-3cam_realsense
 
 
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/50/ckpt/model_30.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense
 
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/50/ckpt/model_15.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_kinect360
 
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/51/ckpt/model_13.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_kinect360 --pos_embed
 
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/50/ckpt/model_13.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-orb
+
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/52/ckpt/model_7.pth --phase CenterTrack --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_kinect360
+
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/53/ckpt/model_8.pth --phase CenterNet --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_kinect360
 
 
 

@@ -9,7 +9,7 @@ from __future__ import division
 from __future__ import print_function
 import os
 # os.environ['CUDA_VISIBLE_DEVICES'] = '2,3'
-os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 # import _init_paths  
 from enum import IntEnum
 
@@ -253,21 +253,22 @@ def main(opt):
     opt.max_iters = (opt.num_epochs * len(Dataset)) // opt.batch_size + 10
     print("max_iters", opt.max_iters)
     
-#    n_data = len(ValDataset)
-#    n_train_data = int(round(n_data) * 0.01)
-#    n_valid_data = n_data - n_train_data
-#    ValDataset, valid_dataset = torch.utils.data.random_split(
-#        ValDataset, [n_train_data, n_valid_data]
-#    )
-#    
-#    n_data = len(Dataset)
-#    n_train_data = int(round(n_data)*0.001)
-#    n_valid_data = n_data - n_train_data
-#    Dataset, valid_dataset = torch.utils.data.random_split(
-#        Dataset, [n_train_data, n_valid_data]
-#    )
+    # n_data = len(ValDataset)
+    # n_train_data = int(round(n_data) * 0.01)
+    # n_valid_data = n_data - n_train_data
+    # ValDataset, valid_dataset = torch.utils.data.random_split(
+    #    ValDataset, [n_train_data, n_valid_data]
+    # )
+   
+    # n_data = len(Dataset)
+    # n_train_data = int(round(n_data)*0.001)
+    # n_valid_data = n_data - n_train_data
+    # Dataset, valid_dataset = torch.utils.data.random_split(
+    #    Dataset, [n_train_data, n_valid_data]
+    # )
     
     print(opt)
+    print("phase", opt.phase)
 #    if not opt.not_set_cuda_env:
 #      print(opt.not_set_cuda_env)
 #      print('gpus_str', opt.gpus_str)

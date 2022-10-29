@@ -17,6 +17,7 @@ from ruamel.yaml import YAML
 
 import dream_geo as dream
 from .spatial_softmax import SoftArgmaxPavlo
+from rf_tools.LM import *
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
@@ -811,6 +812,7 @@ def analyze_ndds_center_dream_dataset(
         print("Conducting inference...")
         for idx, sample in enumerate(zip(json_list, detected_kp_proj_list)):
             this_json_path, this_detected_kps_raw = sample
+            this_detected_kps_raw = np.array(this_detected_kps_raw)
             
             # 导入json文件
             gt_kps_raw,  gt_kps_pos, gt_kps_blend, gt_jsons_list = [], [], [], []
@@ -942,6 +944,7 @@ def analyze_ndds_center_dream_dataset(
     poses_xyzxyzw = []
     all_n_inframe_projs_gt = []
     pnp_add = []
+    distances = []
 
     if pnp_analysis:
         all_gt_kp_positions = np.array(all_gt_kp_positions)
@@ -985,15 +988,79 @@ def analyze_ndds_center_dream_dataset(
             all_n_inframe_projs_gt.append(n_inframe_projs_gt)
 
             if pnp_retval:
-                poses_xyzxyzw.append(translation.tolist() + quaternion.tolist())
-                add = dream.geometric_vision.add_from_pose(
-                    translation, quaternion, kp_pos_gt_pnp, camera_K
-                )
+                if opt.rf:
+                    # print("Introducing 3D refinement!!!")
+                    
+                    x,y,z,w = quaternion.tolist()
+                    # print('quaternion start', quaternion)
+                    quat_init = np.array([w,x,y,z]).reshape(1,4)
+                    trans_init = np.array(translation).reshape(1, 3)
+                    num_pt = kp_pos_gt_pnp.shape[0]
+                    x2d = kp_projs_est_pnp
+                    x2d_rep = []
+                    for x in kp_pos_gt_pnp:
+                        #quat_init:(1,4),trans_init(1,3),quat_init[0]:(4,)
+                        x2d_rep_i = camera_K @ (get_new_point_from_quaternion(x,quat_init[0]) + trans_init).T
+                        x2d_rep_i[0]/=x2d_rep_i[2]
+                        x2d_rep_i[1]/=x2d_rep_i[2]
+                        x2d_rep.append(x2d_rep_i[0:2])
+                    x2d_rep = np.array(x2d_rep).squeeze()
+                    
+                    kp, _ = x2d_rep.shape
+                    distance_sq = np.linalg.norm((x2d-x2d_rep), axis=-1)**2
+                    distances += distance_sq.tolist()
+                    distance_sq = distance_sq.reshape(kp, 1)
+                    distance_sq = np.repeat(distance_sq, 2, axis=-1)
+                    # print("dis", distance_sq)
+                    
+                    weights = get_weights(num_pt,distance_sq)
+                    start = time.perf_counter()
+                    # register_GN((7，2),(7,3), quat_init:(1,4),trans_init(1,3)
+                    quat, T = register_GN_C( kp_projs_est_pnp,kp_pos_gt_pnp, quat_init, trans_init, weights, camera_K, 7)
+                    first = time.perf_counter()
+                    #quat:(4,),T:(3,)
+                    quat = torch.tensor(quat).view(1,4)
+                    T = torch.tensor(T).view(3,1)
+                    if torch.isnan(quat).any() or torch.isnan(T).any():
+                        print("quaternian isnan", quaternion)
+                        x,y,z,w = quaternion.tolist()
+                        quat = torch.from_numpy(np.array([w,x,y,z])).view(1, 4)
+                        T = translation
+                        # ooo+=1
+                        # timesum.append(first - start)
+
+
+                    poses_xyzxyzw.append(T.tolist() + quat.tolist()[0][1:] + quat.tolist()[0][:1])
+                    T = torch.tensor(T).view(3,1)
+                    quat = torch.tensor((quat)).view(1,4)
+                    #T:tensor(3,1),quat:tensor(1,4)
+                    add1 = dream.geometric_vision.add_from_pose_tensor(
+                        T, quat, kp_pos_gt_pnp, camera_K
+                    )
+                    translation = torch.tensor(translation).view(3, 1)
+                    # print("last quaternion", quaternion)
+                    x,y,z,w = quaternion.tolist()
+                    quaternion = torch.from_numpy(np.array([w,x,y,z])).view(1, 4)
+                    add2 = dream.geometric_vision.add_from_pose_tensor(
+                        translation, quaternion, kp_pos_gt_pnp, camera_K
+                    )
+                    print("refine add", add1)
+                    print("original add", add2)
+                    
+                    add = min(add1, add2)
+                else:
+                    poses_xyzxyzw.append(translation.tolist() + quaternion.tolist())
+                    add = dream.geometric_vision.add_from_pose(
+                        translation, quaternion, kp_pos_gt_pnp, camera_K
+                    )
             else:
                 poses_xyzxyzw.append([-999.99] * 7)
                 add = -999.99
 
             pnp_add.append(add)
+        
+        distances_np = np.array(distances)
+        np.savetxt("/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/dis.txt", distances_np)
 
         pnp_path = os.path.join(output_dir, "pnp_results.csv")
         write_pnp_csv(

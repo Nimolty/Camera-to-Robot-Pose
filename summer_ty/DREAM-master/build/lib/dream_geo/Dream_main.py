@@ -9,7 +9,7 @@ from __future__ import division
 from __future__ import print_function
 import os
 # os.environ['CUDA_VISIBLE_DEVICES'] = '2,3'
-os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 # import _init_paths  
 from enum import IntEnum
 

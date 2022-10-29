@@ -61,6 +61,7 @@ class opts(object):
 
     # log
     self.parser.add_argument('--is_real', default=False, help="infer in different real datasets")
+    self.parser.add_argument("--rf", action="store_true")
     self.parser.add_argument('--print_iter', type=int, default=0, 
                              help='disable progress bar and print to screen.')
     self.parser.add_argument('--save_all', action='store_true',
