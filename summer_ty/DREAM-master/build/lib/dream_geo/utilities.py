@@ -555,7 +555,9 @@ def load_keypoints(data_path, object_name, keypoint_names):
 
         #
         kp_position_wrt_cam = kp_data['location']
-        kp_projection = kp_data["projected_location"]
+        if "projected_location" in kp_data:
+            kp_projection = kp_data["projected_location"]
+            keypoint_data["projections"].append(kp_projection)
         
 #        if min(kp_projection) < 0:
 #            print(data_path)
@@ -564,7 +566,7 @@ def load_keypoints(data_path, object_name, keypoint_names):
 
         keypoint_data["idx"].append(kp_name)
         keypoint_data["positions_wrt_cam"].append(kp_position_wrt_cam)
-        keypoint_data["projections"].append(kp_projection)
+        # keypoint_data["projections"].append(kp_projection)
 
     return keypoint_data
     
@@ -641,6 +643,29 @@ def draw_umich_gaussian(heatmap, center, radius, k=1):
         # print(res)
         # res = [center[0] -x , center[1] - y]
         gaussian = gaussian2D((diameter, diameter), sigma=2, res=res)
+        # height, width = heatmap.shape[0:2]
+          
+        left, right = min(x, radius), min(width - x, radius + 1)
+        top, bottom = min(y, radius), min(height - y, radius + 1)
+        # import pdb; pdb.set_trace()
+        masked_heatmap  = heatmap[y - top:y + bottom, x - left:x + right]
+        masked_gaussian = gaussian[radius - top:radius + bottom, radius - left:radius + right]
+        if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0: # TODO debug
+          np.maximum(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
+    return heatmap
+    
+def draw_umich_gaussian_teaser(heatmap, center, radius, k=1):
+    # import pdb; pdb.set_trace()
+    diameter = 2 * radius + 1
+    height, width = heatmap.shape[0:2]
+    x, y = int(center[0]), int(center[1])
+    # gaussian = gaussian2D((diameter, diameter), sigma=2)
+    
+    if x - radius >=0 and x + radius + 1 < width and y - radius >= 0 and y + radius + 1 < height:
+        # res = [0, 0]  # 统一使用整像素的hm 
+        # print(res)
+        res = [center[0] -x , center[1] - y]
+        gaussian = gaussian2D((diameter, diameter), sigma=6, res=res)
         # height, width = heatmap.shape[0:2]
           
         left, right = min(x, radius), min(width - x, radius + 1)
@@ -862,6 +887,20 @@ def get_prev_hm_wo_noise(kp_projs_raw, trans_input,input_w, input_h, raw_width, 
             ct = deepcopy(kp_projs_net_output[i])
             conf = 1
             draw_umich_gaussian(pre_hm, ct, radius, k=conf) # lost_disturb对应fn randomly removing detections with probability \lambda_fn
+
+    return pre_hm 
+    
+def get_prev_hm_wo_noise_teaser(kp_projs_raw, trans_input,input_w, input_h, raw_width, raw_height,mode=None):
+    hm_w, hm_h = input_w, input_h
+    pre_hm = np.zeros((hm_h, hm_w), dtype=np.float32)
+    if kp_projs_raw is not None:
+        kp_projs_net_output = affine_transform_and_clip(kp_projs_raw, trans_input, input_w, input_h, raw_width, raw_height,mode=mode) # 得到一个kp x 2的矩阵
+        n_kp, _ = kp_projs_net_output.shape
+        radius = 12
+        for i in range(n_kp):
+            ct = deepcopy(kp_projs_net_output[i])
+            conf = 1
+            draw_umich_gaussian_teaser(pre_hm, ct, radius, k=conf) # lost_disturb对应fn randomly removing detections with probability \lambda_fn
 
     return pre_hm 
 

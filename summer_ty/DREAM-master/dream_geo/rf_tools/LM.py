@@ -7,7 +7,7 @@ import cv2
 import torch.nn.functional as F
 from itertools import chain
 import ctypes
-so = ctypes.cdll.LoadLibrary("/root/autodl-tmp/yangtian/summer_ty/DREAM-master/dream_geo/rf_tools/libtestso.so")
+so = ctypes.cdll.LoadLibrary("/root/autodl-tmp/yangtian/summer_ty/DREAM-master/dream_geo/rf_tools/libtestso_final.so")
 def _sqrt_positive_part(x: torch.Tensor) -> torch.Tensor:
     """
     Returns torch.sqrt(torch.max(0, x))

@@ -62,6 +62,7 @@ class opts(object):
     # log
     self.parser.add_argument('--is_real', default=False, help="infer in different real datasets")
     self.parser.add_argument("--rf", action="store_true")
+    self.parser.add_argument("--ct_modify",action="store_true")
     self.parser.add_argument('--print_iter', type=int, default=0, 
                              help='disable progress bar and print to screen.')
     self.parser.add_argument('--save_all', action='store_true',
@@ -114,6 +115,15 @@ class opts(object):
     self.parser.add_argument('--efficient_level', type=int, default=0)
     self.parser.add_argument('--prior_bias', type=float, default=-4.6) # -2.19
     self.parser.add_argument('--num_decoder_layers', type=int, default=4)
+    self.parser.add_argument('--ks1', default=12)
+    self.parser.add_argument('--ks2', default=6)
+    self.parser.add_argument('--ks3', default=3)
+    self.parser.add_argument('--k_list_1', type=int, default=1)
+    self.parser.add_argument('--k_list_2', type=int, default=1)
+    self.parser.add_argument('--k_list_3', type=int, default=1)
+    
+    
+    self.parser.add_argument("--multi_frame", default=0, type=int)
 
     # input
     self.parser.add_argument('--input_res', type=int, default=-1, 

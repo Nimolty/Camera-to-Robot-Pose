@@ -269,6 +269,12 @@ class DLA(nn.Module):
                     padding=3, bias=False),
             nn.BatchNorm2d(channels[0], momentum=BN_MOMENTUM),
             nn.ReLU(inplace=True))
+        if opt.ct_modify:
+            self.repro_hm_layer = nn.Sequential(
+            nn.Conv2d(1, channels[0], kernel_size=7, stride=1,
+                    padding=3, bias=False),
+            nn.BatchNorm2d(channels[0], momentum=BN_MOMENTUM),
+            nn.ReLU(inplace=True))
         # for m in self.modules():
         #     if isinstance(m, nn.Conv2d):
         #         n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -306,7 +312,7 @@ class DLA(nn.Module):
             inplanes = planes
         return nn.Sequential(*modules)
 
-    def forward(self, x=None, pre_img=None, pre_hm=None):
+    def forward(self, x=None, pre_img=None, pre_hm=None, repro_hm=None):
         y = []
         if x is not None:
             x = self.base_layer(x)
@@ -314,6 +320,8 @@ class DLA(nn.Module):
                 x = x + self.pre_img_layer(pre_img)
             if pre_hm is not None:
                 x = x + self.pre_hm_layer(pre_hm)
+            if repro_hm is not None:
+                x=  x + self.repro_hm_layer(repro_hm)
         else:
             if pre_img is not None:
                 x = self.pre_img_layer(pre_img)
@@ -655,8 +663,8 @@ class DLASeg(BaseModel):
 
         return [y[-1]]
 
-    def imgpre2feats(self, x, pre_img=None, pre_hm=None):
-        x = self.base(x, pre_img, pre_hm)
+    def imgpre2feats(self, x, pre_img=None, pre_hm=None, repro_hm=None):
+        x = self.base(x, pre_img, pre_hm,repro_hm)
         x = self.dla_up(x)
 
         y = []
@@ -1333,6 +1341,7 @@ class DLA_PlanAWindow(BaseModelPlanA):
         self.first_level = int(np.log2(down_ratio))
         self.last_level = 5
         print('num_layers', num_layers)
+        print("pretrained", opt.load_model=="")
         self.base = globals()['dla{}'.format(num_layers)](
             pretrained=(opt.load_model == ''), opt=opt)
         
@@ -1350,8 +1359,9 @@ class DLA_PlanAWindow(BaseModelPlanA):
             [2 ** i for i in range(self.last_level - self.first_level)],
             node_type=self.node_type)
         
-        self.K_list = [1, 1, 1]
-        self.kernel_list = [12, 6, 3]
+        self.K_list = [int(opt.k_list_1), int(opt.k_list_2), int(opt.k_list_3)]
+        self.kernel_list = [int(opt.ks1), int(opt.ks2), int(opt.ks3)]
+        # self.kernel_list = [12, 6, 3]
         # self.kernel_list = [3,3,3] 
         self.scale_list = [4, 2, 1]
         

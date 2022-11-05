@@ -721,7 +721,9 @@ def image_from_belief_map(
         cmap = plt.get_cmap(colormap)
         rgba_image = cmap(np.array(belief_map_image))
         heatmap_image = np.delete(rgba_image, 3, 2)
+        # belief_map_image = PILImage.fromarray(cv2.applyColorMap(np.uint8(255 * heatmap_image), cv2.COLORMAP_JET))
         belief_map_image = PILImage.fromarray(np.uint8(255 * heatmap_image))
+        
 
     return belief_map_image
 

@@ -11,7 +11,7 @@ from __future__ import print_function
 # import tools._init_paths as _init_paths
 
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2"
 import sys
 import cv2
@@ -61,14 +61,14 @@ def inference(opt):
     print("inference dataset", opt.infer_dataset)
     with torch.no_grad():
         found_videos = find_dataset(opt)
+        json_list, detected_kps_list = [], []
         print("length of found_videos", len(found_videos))
+        
         sample_found_videos = random.sample(found_videos, 150)
         print("length of sample found videos", len(sample_found_videos))
-        json_list, detected_kps_list = [], []
+
         for video_idx, found_video_0 in tqdm(enumerate(sample_found_videos)): # 全部Inference！
-        # found_video_0 = found_videos[j]
-        # print('found_video_0', found_video_0) 
-        # print('json_path', found_video_0[1])
+        # for video_idx, found_video_0 in tqdm(enumerate(found_videos)): 
             length = len(found_video_0[0])
             # print(length)
             detector = DreamDetector(opt, keypoint_names, is_real=False, is_ct=True, idx=video_idx)
@@ -110,6 +110,25 @@ def inference(opt):
     output_dir = os.path.join(exp_dir, exp_id,'results', pth_order, '')
     dream.utilities.exists_or_mkdir(output_dir)
     
+    save_name = opt.infer_dataset.split('/')[-2]
+    path_meta = os.path.join(output_dir, f"{save_name}_dt_and_json.json")
+    if not os.path.exists(path_meta):
+        file_write_meta = open(path_meta, 'w')
+        meta_json = dict()
+        meta_json["dt"] = np.array(detected_kps_list).tolist()
+        meta_json["json"] = json_list
+
+        json_save = json.dumps(meta_json, indent=1)
+        file_write_meta.write(json_save)
+        file_write_meta.close()
+
+    parser = YAML(typ="safe")
+    with open(path_meta, "r") as f:
+        real_data = parser.load(f.read().replace('\t', ' '))
+        detected_kps_list = real_data["dt"]
+        json_list = real_data["json"] 
+    
+    
     analysis_info = dream.analysis.analyze_ndds_center_dream_dataset(
     json_list, # 在外面直接写一个dataset就好了，需要注意它的debug_node为LIGHT
     detected_kps_list,
@@ -132,10 +151,12 @@ def inference_real(opt):
         real_jsons = real_data["json_paths"]
         real_images = real_data["img_paths"] # 为一个list里面是10个video
     json_list, detected_kps_list, d_lst = [], [], []
+    json_lists, detected_kps_lists = [], []
     count = 0
     with torch.no_grad():
         for idx, (video_images, video_jsons) in tqdm(enumerate((zip(real_images, real_jsons)))):
-            if idx >= 0: 
+            this_json_list, this_detected_kp_proj_list = [], []
+            if idx >= 5: 
                 count = idx
                 detector = DreamDetector(opt,real_keypoint_names, is_real=opt.is_real, is_ct=True, idx=idx)
                 assert len(video_images) == len(video_jsons)
@@ -146,6 +167,7 @@ def inference_real(opt):
                         continue 
                     
                     img = cv2.imread(img_path)
+                    # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                     
                     # 双边高斯平滑
                     # save_dir = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/ct_infer_img/gaussian_k3"
@@ -202,6 +224,11 @@ def inference_real(opt):
                     np.savetxt(output_dir + 'txt', detected_kps_np)
                     json_list.append(json_path)
                     detected_kps_list.append(detected_kps_np) 
+                    this_json_list.append(json_path)
+                    this_detected_kp_proj_list.append(detected_kps_np.tolist())
+
+            json_lists.append(this_json_list)
+            detected_kps_lists.append(this_detected_kp_proj_list)
                     # print("shape", detected_kps_np.shape)
                     # d_lst.append(detected_kps_np.tolist())
         
@@ -212,17 +239,24 @@ def inference_real(opt):
         output_dir = os.path.join(exp_dir, exp_id,'results', pth_order, '')
         dream.utilities.exists_or_mkdir(output_dir)
         
-        count = 5
+
         # path_meta = os.path.join(output_dir, f"dt_and_json_{count}.json")
-        if opt.is_real == "panda-3cam_realsense":
+        if opt.is_real == "panda-3cam_realsense" and opt.multi_frame == 0:
             path_meta = os.path.join(output_dir, f"dt_and_json.json")
-        else:
+        elif opt.is_real == "panda-3cam_realsense" and opt.multi_frame != 0:
+            path_meta = os.path.join(output_dir, f"dt_and_json_multi.json")
+        elif opt.is_real != "panda-3cam_realsense" and opt.multi_frame == 0:
             path_meta = os.path.join(output_dir, f"dt_and_json_{opt.is_real}.json")
+        else:
+            path_meta = os.path.join(output_dir, f"dt_and_json_{opt.is_real}_multi.json")
         if not os.path.exists(path_meta):
             file_write_meta = open(path_meta, 'w')
             meta_json = dict()
             meta_json["dt"] = np.array(detected_kps_list).tolist()
             meta_json["json"] = json_list
+            if opt.multi_frame > 0:
+                meta_json["dt_multi"] = detected_kps_lists
+                meta_json["json_multi"] = json_lists
 
             json_save = json.dumps(meta_json, indent=1)
             file_write_meta.write(json_save)
@@ -233,25 +267,45 @@ def inference_real(opt):
             real_data = parser.load(f.read().replace('\t', ' '))
             detected_kps_list = real_data["dt"]
             json_list = real_data["json"] 
+            if opt.multi_frame > 0:
+                detected_kp_proj_lists = real_data["dt_multi"]
+                json_lists = real_data["json_multi"]
 
-        analysis_info = dream.analysis.analyze_ndds_center_dream_dataset(
-        json_list, # 在外面直接写一个dataset就好了，需要注意它的debug_node为LIGHT
-        detected_kps_list,
-        opt, 
-        real_keypoint_names,
-        [640, 480],
-        output_dir,
-        is_real=opt.is_real)
-        return analysis_info
-        return True               
+
+        if opt.multi_frame == 0:
+            analysis_info = dream.analysis.analyze_ndds_center_dream_dataset(
+            json_list, # 在外面直接写一个dataset就好了，需要注意它的debug_node为LIGHT
+            detected_kps_list,
+            opt, 
+            real_keypoint_names,
+            [640, 480],
+            output_dir,
+            is_real=opt.is_real)
+            return analysis_info
+        else:
+            dream.analysis.solve_multiframe_pnp(
+            json_lists,
+            detected_kp_proj_lists,
+            opt,
+            real_keypoint_names,
+            [640,480],
+            output_dir,
+            multiframe=opt.multi_frame,
+            is_real=opt.is_real,
+            )
+
+
+
+        # return analysis_info
+        # return True               
                 
     
      
 
 if __name__ == "__main__":
     opt = opts().init_infer(7, (480, 480))
-    inference(opt)
-    # inference_real(opt)
+    # inference(opt)
+    inference_real(opt)
     
 
 

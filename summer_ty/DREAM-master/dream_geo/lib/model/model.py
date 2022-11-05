@@ -58,6 +58,7 @@ def load_model(model, model_path, opt, optimizer=None):
 
   # check loaded parameters and created model parameters
   for k in state_dict:
+    # print("k",k)
     if k in model_state_dict:
       if (state_dict[k].shape != model_state_dict[k].shape) or \
         (opt.reset_hm and k.startswith('hm') and (state_dict[k].shape[0] in [80, 1])):

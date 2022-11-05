@@ -11,7 +11,7 @@ from __future__ import print_function
 
 # import _init_paths
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '5'  
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'  
 from enum import IntEnum
 
 import albumentations as albu
@@ -30,7 +30,7 @@ from lib.logger import Logger
 from utilities import find_ndds_seq_data_in_dir, set_random_seed, exists_or_mkdir
 from datasets import CenterTrackSeqDataset, ManipulatorNDDSSeqDataset
 # import dream_geo as dream
-# from lib.dataset.dataset_factory import get_dataset # 这里的dataset用我们自己的
+
 from lib.Dream_trainer import Trainer
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -147,20 +147,12 @@ def save_results(train_log, kp_metrics, pnp_results, mode):
         train_log[mode]["pnp_results"]["results"]["Std_ADD"] = Std_ADD
 
 def save_inference(opt):
-    keypoint_names = [
-        "Link0",
-        "Link1",
-        "Link3",
-        "Link4", 
-        "Link6",
-        "Link7",
-        "Panda_hand",
-        ]
-    network_input_resolution = (480, 480) # 时刻需要注意这里是width x height
-    network_output_resolution = (120, 120) # 时刻需要注意这里是width x height
+    network_input_resolution = (480, 480) 
+    network_output_resolution = (120, 120) 
     input_width, input_height = network_input_resolution
-    network_input_resolution_transpose = (input_height, input_width) # centertrack的输入是HxW
+    network_input_resolution_transpose = (input_height, input_width) 
     opt = opts().update_dataset_info_and_set_heads_dream(opt, 7, network_input_resolution_transpose)
+    keypoint_names = opts().get_keypoint_names(opt)
     image_normalization = {"mean" : (0.5, 0.5, 0.5), "stdev" : (0.5, 0.5, 0.5)}
     val_data_path = opt.val_dataset
     val_data = find_ndds_seq_data_in_dir(val_data_path)
@@ -190,7 +182,7 @@ def save_inference(opt):
     # dirlist.sort()
     print('dirlist', dirlist)
     for idx, each_dir in enumerate(tqdm(dirlist)):
-        if (idx + 1) != 25:
+        if (idx + 1) not in [35, 40]:
             continue
 #        if idx < 32 or idx > 35:
 #            continue
@@ -221,13 +213,13 @@ def save_inference(opt):
         # training_log["validation"]["mean_valid_loss_reg"] = mean_valid_reg_loss_per_batch
         
         # inference in synthetic test set
-#        print('infer_dataset', opt.infer_dataset)
-#        opt.infer_dataset = ""/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/syn_test/"
-#        print('infer_dataset', opt.infer_dataset)
-#        syn_test_info = inference(opt)
-#        kp_metrics, pnp_results = syn_test_info[0], syn_test_info[1]
-#        print("kp_metrics", kp_metrics)
-#        save_results(training_log, kp_metrics, pnp_results, mode="synthetic")
+        print('infer_dataset', opt.infer_dataset)
+        opt.infer_dataset = opt.syn_dataset
+        print('infer_dataset', opt.infer_dataset)
+        syn_test_info = inference(opt)
+        kp_metrics, pnp_results = syn_test_info[0], syn_test_info[1]
+        print("kp_metrics", kp_metrics)
+        save_results(training_log, kp_metrics, pnp_results, mode="synthetic")
         
 #        print('opt.is_real', opt.is_real)
 #        opt.is_real = "panda-3cam_realsense"
@@ -236,39 +228,39 @@ def save_inference(opt):
 #        kp_metrics_real, pnp_results_real = real_test_info[0], real_test_info[1]
 #        save_results(training_log, kp_metrics_real, pnp_results_real, mode="panda-3cam_realsense")
         
-#        # inference in pure test set
-#        print('infer_dataset', opt.infer_dataset)
-#        opt.infer_dataset = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/pure_test/"
-#        print('infer_dataset', opt.infer_dataset)
-#        pure_test_info = inference(opt)
-#        kp_metrics_pure, pnp_results_pure = pure_test_info[0], pure_test_info[1]
-#        save_results(training_log, kp_metrics_pure, pnp_results_pure, mode="pure")
+        # inference in pure test set
+        print('infer_dataset', opt.infer_dataset)
+        opt.infer_dataset = opt.pure_dataset
+        print('infer_dataset', opt.infer_dataset)
+        pure_test_info = inference(opt)
+        kp_metrics_pure, pnp_results_pure = pure_test_info[0], pure_test_info[1]
+        save_results(training_log, kp_metrics_pure, pnp_results_pure, mode="pure")
 #        
 
 
     
         # inference in kinect360
-        print('opt.is_real', opt.is_real)
-        opt.is_real = "panda-3cam_kinect360"
-        print('opt.is_real', opt.is_real)
-        real_test_info = inference_real(opt)
-        kp_metrics_real, pnp_results_real = real_test_info[0], real_test_info[1]
-        save_results(training_log, kp_metrics_real, pnp_results_real, mode="panda-3cam_kinect360")
-        
-        # inference in panda-3cam_azure
-        print('opt.is_real', opt.is_real)
-        opt.is_real = "panda-3cam_azure"
-        print('opt.is_real', opt.is_real)
-        real_test_info = inference_real(opt)
-        kp_metrics_real, pnp_results_real = real_test_info[0], real_test_info[1]
-        save_results(training_log, kp_metrics_real, pnp_results_real, mode="panda-3cam_azure")
-        
-        print('opt.is_real', opt.is_real)
-        opt.is_real = "panda-orb"
-        print('opt.is_real', opt.is_real)
-        real_test_info = inference_real(opt)
-        kp_metrics_real, pnp_results_real = real_test_info[0], real_test_info[1]
-        save_results(training_log, kp_metrics_real, pnp_results_real, mode="panda-orb")
+#        print('opt.is_real', opt.is_real)
+#        opt.is_real = "panda-3cam_kinect360"
+#        print('opt.is_real', opt.is_real)
+#        real_test_info = inference_real(opt)
+#        kp_metrics_real, pnp_results_real = real_test_info[0], real_test_info[1]
+#        save_results(training_log, kp_metrics_real, pnp_results_real, mode="panda-3cam_kinect360")
+#        
+#        # inference in panda-3cam_azure
+#        print('opt.is_real', opt.is_real)
+#        opt.is_real = "panda-3cam_azure"
+#        print('opt.is_real', opt.is_real)
+#        real_test_info = inference_real(opt)
+#        kp_metrics_real, pnp_results_real = real_test_info[0], real_test_info[1]
+#        save_results(training_log, kp_metrics_real, pnp_results_real, mode="panda-3cam_azure")
+#        
+#        print('opt.is_real', opt.is_real)
+#        opt.is_real = "panda-orb"
+#        print('opt.is_real', opt.is_real)
+#        real_test_info = inference_real(opt)
+#        kp_metrics_real, pnp_results_real = real_test_info[0], real_test_info[1]
+#        save_results(training_log, kp_metrics_real, pnp_results_real, mode="panda-orb")
         
         # save in json
         meta_path = os.path.join(results_path, "info_{}.json".format(each_dir.replace('.pth', '')))
@@ -283,7 +275,6 @@ def save_inference(opt):
 if __name__ == '__main__':
   opt = opts().parse()
   save_inference(opt)
-
 
 
 

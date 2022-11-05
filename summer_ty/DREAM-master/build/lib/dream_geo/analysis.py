@@ -18,6 +18,9 @@ from ruamel.yaml import YAML
 import dream_geo as dream
 from .spatial_softmax import SoftArgmaxPavlo
 from rf_tools.LM import *
+from itertools import combinations
+from scipy.special import comb
+import random
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
@@ -770,6 +773,531 @@ def analyze_ndds_dataset(
     else:
         return sample_names, all_kp_projs_detected_raw, all_kp_projs_gt_raw
 
+
+def solve_multiframe_pnp_real(
+    gt_kps_pos_lists,
+    # gt_kps_proj_lists,
+    dt_kps_proj_lists,
+    opt,
+    keypoint_names,
+    image_raw_resolution,
+    output_dir,
+    camera_K,
+    multi_frame,
+    visualize_belief_maps=True,
+    pnp_analysis=True,
+    force_overwrite=False,
+    is_real=False,
+    batch_size=16,
+    num_workers=8,
+    gpu_ids=None,
+    ):
+    batch_size = opt.batch_size
+    num_workers = opt.num_workers
+    gpu_ids = opt.gpus
+    
+    # dt_kps_proj_lists 为一个长为M的lists,每个元素为7x2的list表示2D坐标
+    # gt_kps_pos_lists 为一个长为M的lists,每个元素为7x3的list表示3D坐标
+    num_of_all_frames = len(dt_kps_proj_lists)
+    assert len(dt_kps_proj_lists) == len(gt_kps_pos_lists)
+    assert len(dt_kps_proj_lists) == len(gt_kps_proj_lists)
+
+    dt_kps_proj_nps = np.array(dt_kps_proj_lists) # M x 7 x 2
+    gt_kps_pos_nps = np.array(gt_kps_pos_lists) # M x 7 x 3
+    # gt_kps_proj_nps = np.array(gt_kps_proj_lists)
+
+    # N控制采样上限数量
+    N = 2500
+    F = np.arange(num_of_all_frames)
+
+    comb_nums = comb(num_of_all_frames, multi_frame)
+    if comb_nums > N:
+        pnp_index = []
+        for i in range(N):
+            pnp_index.append(random.sample(F, multi_frame))
+    else:
+        pnp_index = [list(combinations(F, multi_frame))]
+    
+    # m = multi_frame
+    sample_dt_kps_proj_nps = dt_kps_proj_nps[pnp_index] # n x m x 7 x 2
+    sample_gt_kps_pos_nps = gt_kps_pos_nps[pnp_index] # n x m x 7 x 3
+    # sample_gt_kps_proj_nps = gt_kps_proj_nps[pnp_index]
+
+    assert sample_dt_kps_proj_nps.shape[1] == multi_frame
+    assert sample_gt_kps_pos_nps.shape[1] == multi_frame
+    # assert sample_gt_kps_proj_nps.shape[1] == multi_frame
+
+    nums = sample_dt_kps_proj_nps.shape[0]
+    all_n_inframe_projs_gt = []
+    pnp_add = []
+    for idx in range(nums):
+        this_dt_kps_proj, this_gt_kps_pos = sample_dt_kps_proj_nps[idx], sample_gt_kps_pos_nps[idx]
+        # this_dt_kps_proj : m x 7 x 2
+        # this_gt_kps_pos : m x 7 x 3
+        # this_gt_kps_proj : m x 7 x 2
+
+        n_inframe_projs_gt = multi_frame * 7
+
+        this_dt_kps_proj = this_dt_kps_proj.reshape(-1, 2)
+        this_gt_kps_pos = this_gt_kps_pos.reshape(-1, 3)
+        idx_good_detections = np.where(this_dt_kps_proj > -999.0)
+        idx_good_detections_rows = np.unique(idx_good_detections[0])
+        kp_projs_est_pnp = this_dt_kps_proj[idx_good_detections_rows, :]
+        kp_pos_gt_pnp = this_gt_kps_pos[idx_good_detections_rows, :]
+        
+        # n_inframe_projs_gt = len(idx_good_detections_rows)
+        pnp_retval, translation, quaternion = dream.geometric_vision.solve_pnp(
+                kp_pos_gt_pnp, kp_projs_est_pnp, camera_K)
+        if pnp_retval:
+            if opt.rf:
+                # print("Introducing 3D refinement!!!")
+                
+                x,y,z,w = quaternion.tolist()
+                # print('quaternion start', quaternion)
+                quat_init = np.array([w,x,y,z]).reshape(1,4)
+                trans_init = np.array(translation).reshape(1, 3)
+                num_pt = kp_pos_gt_pnp.shape[0]
+                x2d = kp_projs_est_pnp
+                x2d_rep = []
+                for x in kp_pos_gt_pnp:
+                    #quat_init:(1,4),trans_init(1,3),quat_init[0]:(4,)
+                    x2d_rep_i = camera_K @ (get_new_point_from_quaternion(x,quat_init[0]) + trans_init).T
+                    x2d_rep_i[0]/=x2d_rep_i[2]
+                    x2d_rep_i[1]/=x2d_rep_i[2]
+                    x2d_rep.append(x2d_rep_i[0:2])
+                x2d_rep = np.array(x2d_rep).squeeze()
+                
+                kp, _ = x2d_rep.shape
+                distance_sq = np.linalg.norm((x2d-x2d_rep), axis=-1)**2
+                distances += distance_sq.tolist()
+                distance_sq = distance_sq.reshape(kp, 1)
+                distance_sq = np.repeat(distance_sq, 2, axis=-1)
+                # print("dis", distance_sq)
+                
+                weights = get_weights(num_pt,distance_sq)
+                start = time.perf_counter()
+                # register_GN((7，2),(7,3), quat_init:(1,4),trans_init(1,3)
+                # print("num_pt", num_pt)
+                quat, T = register_GN_C(kp_projs_est_pnp,kp_pos_gt_pnp, quat_init, trans_init, weights, camera_K, num_pt)
+                first = time.perf_counter()
+                #quat:(4,),T:(3,)
+                quat = torch.tensor(quat).view(1,4)
+                T = torch.tensor(T).view(3,1)
+                if torch.isnan(quat).any() or torch.isnan(T).any():
+                    # print("quaternian isnan", quaternion)
+                    x,y,z,w = quaternion.tolist()
+                    quat = torch.from_numpy(np.array([w,x,y,z])).view(1, 4)
+                    T = translation
+                    # ooo+=1
+                    # timesum.append(first - start)
+
+
+                poses_xyzxyzw.append(T.tolist() + quat.tolist()[0][1:] + quat.tolist()[0][:1])
+                T = torch.tensor(T).view(3,1)
+                quat = torch.tensor((quat)).view(1,4)
+                #T:tensor(3,1),quat:tensor(1,4)
+                add1 = dream.geometric_vision.add_from_pose_tensor(
+                    T, quat, kp_pos_gt_pnp, camera_K
+                )
+                translation = torch.tensor(translation).view(3, 1)
+                # print("last quaternion", quaternion)
+                x,y,z,w = quaternion.tolist()
+                quaternion = torch.from_numpy(np.array([w,x,y,z])).view(1, 4)
+                add2 = dream.geometric_vision.add_from_pose_tensor(
+                    translation, quaternion, kp_pos_gt_pnp, camera_K
+                )
+                
+                print("refine add", add1)
+                print("original add", add2)
+                    
+                add = min(add1, add2)
+            else:
+                poses_xyzxyzw.append(translation.tolist() + quaternion.tolist())
+                add = dream.geometric_vision.add_from_pose(
+                    translation, quaternion, kp_pos_gt_pnp, camera_K
+                )
+        else:
+            poses_xyzxyzw.append([-999.99] * 7)
+            add = -999.99
+
+        pnp_add.append(add)
+        all_n_inframe_projs_gt.append(n_inframe_projs_gt)
+    
+    pnp_results = pnp_metrics(pnp_add, all_n_inframe_projs_gt)
+    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+
+    def print_to_screen_and_file(file, text):
+        print(text)
+        file.write(text + "\n")
+    results_log_path = os.path.join(output_dir, "analysis_results.txt")
+    with open(results_log_path, "w") as f:
+        if pnp_analysis:
+            n_pnp_possible = pnp_results["num_pnp_possible"]
+            if n_pnp_possible > 0:
+                n_pnp_successful = pnp_results["num_pnp_found"]
+                n_pnp_fails = pnp_results["num_pnp_not_found"]
+                print_to_screen_and_file(
+                    f,
+                    "Percentage of frames where PNP failed when viable (incorrect): {:.3f}% ({}/{})".format(
+                        float(n_pnp_fails) / float(n_pnp_possible) * 100.0,
+                        n_pnp_fails,
+                        n_pnp_possible,
+                    ),
+                )
+                print_to_screen_and_file(
+                    f,
+                    "Percentage of frames where PNP was successful when viable (correct): {:.3f}% ({}/{})".format(
+                        float(n_pnp_successful) / float(n_pnp_possible) * 100.0,
+                        n_pnp_successful,
+                        n_pnp_possible,
+                    ),
+                )
+                print_to_screen_and_file(
+                    f,
+                    "ADD (m) for frames where PNP was successful when viable (n = {}):".format(
+                        n_pnp_successful
+                    ),
+                )
+                print_to_screen_and_file(
+                    f, "   AUC: {:.5f}".format(pnp_results["add_auc"])
+                )
+                print_to_screen_and_file(
+                    f,
+                    "      AUC threshold: {:.5f}".format(pnp_results["add_auc_thresh"]),
+                )
+                print_to_screen_and_file(
+                    f, "   Mean: {:.5f}".format(pnp_results["add_mean"])
+                )
+                print_to_screen_and_file(
+                    f, "   Median: {:.5f}".format(pnp_results["add_median"])
+                )
+                print_to_screen_and_file(
+                    f, "   Std Dev: {:.5f}".format(pnp_results["add_std"])
+                )
+            else:
+                print_to_screen_and_file(f, "No frames where PNP is possible.")
+
+            print_to_screen_and_file(f, "")
+
+
+
+
+
+
+        
+
+
+
+
+
+    
+
+
+
+
+
+
+
+def solve_multiframe_pnp(
+    json_lists,
+    detected_kp_proj_lists,
+    opt,
+    keypoint_names,
+    image_raw_resolution,
+    output_dir,
+    multiframe=2,
+    visualize_belief_maps=True,
+    pnp_analysis=True,
+    force_overwrite=False,
+    is_real=False,
+    batch_size=16,
+    num_workers=8,
+    gpu_ids=None,
+    ):
+    batch_size = opt.batch_size
+    num_workers = opt.num_workers
+    gpu_ids = opt.gpus
+    dataset_path = "/root/autodl-tmp/dream_data/data/real"
+    
+    # Input argument handling
+    assert (
+        isinstance(batch_size, int) and batch_size > 0
+    ), 'If specified, "batch_size" must be a positive integer.'
+    assert (
+        isinstance(num_workers, int) and num_workers >= 0
+    ), 'If specified, "num_workers" must be an integer greater than or equal to zero.'
+
+    all_gt_kp_projs = []
+    all_dt_kp_projs = []
+    all_gt_kp_pos = []
+    all_kp_projs_blend = []
+    all_json_list = []
+    sample_results = []
+
+    sample_results = []
+    sample_idx = 0
+
+    with torch.no_grad():
+        print("Conducting inference...")
+        for _, sample in enumerate(zip(json_lists, detected_kp_proj_lists)):
+            this_json_list, this_detected_kp_proj_list = sample
+            this_gt_kp_proj, this_gt_kp_pos, this_dt_kp_proj = [], [], []
+            for this_json, this_detected_kp_proj in zip(this_json_list, this_detected_kp_proj_list):
+                this_detected_kp_proj_np = np.array(this_detected_kp_proj)
+                gt_kps_raw,  gt_kps_pos, dt_kps_raw = [], [], []
+                parser = YAML(typ="safe")
+                with open(this_json, "r") as f:
+                    data = parser.load(f.read().replace('\t', ' '))
+                # data = data[0]
+                if is_real:
+                    data = data["objects"][0]
+                else:
+                    data = data[0]
+                object_keypoints = data["keypoints"]
+                for idx, kp_name in enumerate(keypoint_names):
+                    gt_kps_raw.append(object_keypoints[idx]["projected_location"])
+                    if is_real:
+                        gt_kps_pos.append(object_keypoints[idx]["location"])
+                    else:
+                        gt_kps_pos.append(object_keypoints[idx]["location_wrt_cam"])
+                # gt_kps_pos.append(object_keypoints[idx]["location"])   
+                gt_kps_raw = np.array(gt_kps_raw, dtype=np.float32)
+                gt_kps_pos = np.array(gt_kps_pos, dtype=np.float32)
+
+                this_dt_kp_proj.append(this_detected_kp_proj_np.tolist())
+                this_gt_kp_proj.append(gt_kps_raw.tolist())
+                this_gt_kp_pos.append(gt_kps_pos.tolist())
+
+            
+            
+                # all_json_list.append(gt_jsons_list.tolist())
+            all_gt_kp_projs.append(this_gt_kp_proj)
+            all_dt_kp_projs.append(this_dt_kp_proj)
+            all_gt_kp_pos.append(this_gt_kp_pos)
+        
+        assert len(all_gt_kp_projs) == len(all_dt_kp_projs)
+        assert len(all_gt_kp_projs) == len(all_gt_kp_pos)
+
+        # solve pnp in multiframes K
+        all_gt_kp_projs = np.array(all_gt_kp_projs)
+        all_gt_kp_pos = np.array(all_gt_kp_pos)
+        all_dt_kp_projs = np.array(all_dt_kp_projs)
+        pnp_attempts_successful = []
+        poses_xyzxyzw = []
+        all_n_inframe_projs_gt = []
+        pnp_add = []
+        distances = []
+        
+        if is_real:
+            camera_data_path = os.path.join(dataset_path, is_real, "_camera_settings.json")
+            camera_K = dream.utilities.load_camera_intrinsics(camera_data_path)
+        else:
+            camera_K = np.array([[502.30, 0.0, 319.5], [0, 502.30, 179.5], [0, 0, 1]])
+
+        for this_gt_kp_projs, this_gt_kp_pos, this_dt_kp_projs in zip(all_gt_kp_projs, \
+                all_gt_kp_pos, all_dt_kp_projs):
+
+            this_dt_kp_projs_np = np.array(this_dt_kp_projs)
+            this_gt_kp_projs_np = np.array(this_gt_kp_projs)
+            this_gt_kp_pos_np = np.array(this_gt_kp_pos)
+            # n_inframe_projs_gt = 0
+            for ind, ind_sample in enumerate(zip(
+            this_dt_kp_projs, this_gt_kp_projs, this_gt_kp_pos
+            )):
+                # print('ind', ind)
+                #if ind % multiframe != 0:
+                if ind < multiframe - 1:
+                    continue
+                kp_projs_est, kp_projs_gt, kp_pos_gt = ind_sample
+                n_inframe_projs_gt = 0
+                for kp_proj_gt in kp_projs_gt:
+                    if (
+                        0.0 < kp_proj_gt[0]
+                        and kp_proj_gt[0] < image_raw_resolution[0]
+                        and 0.0 < kp_proj_gt[1]
+                        and kp_proj_gt[1] < image_raw_resolution[1]
+                        ):
+                        n_inframe_projs_gt += 1
+                
+                all_n_inframe_projs_gt.append(n_inframe_projs_gt)
+                # print("all_n_inframe_projs_gt", all_n_inframe_projs_gt)
+                
+                sample_info = {}
+                sample_info["name"] = ind
+                sample_results.append(sample_info)
+                
+                # print("shape", this_dt_kp_projs_np.shape)
+                multi_kp_projs_est = this_dt_kp_projs_np[ind-multiframe+1:ind+1, :, :].reshape(-1, 2)
+                multi_kp_projs_gt = this_gt_kp_projs_np[ind-multiframe+1:ind+1, :, :].reshape(-1, 2)
+                multi_kp_pos_gt = this_gt_kp_pos_np[ind-multiframe+1:ind+1, :].reshape(-1, 3)
+
+                idx_good_detections = np.where(multi_kp_projs_est > -999.0)
+                idx_good_detections_rows = np.unique(idx_good_detections[0])
+                kp_projs_est_pnp = multi_kp_projs_est[idx_good_detections_rows, :]
+                kp_projs_gt_pnp = multi_kp_projs_gt[idx_good_detections_rows, :]
+                kp_pos_gt_pnp = multi_kp_pos_gt[idx_good_detections_rows, :]
+
+                pnp_retval, translation, quaternion = dream.geometric_vision.solve_pnp(
+                kp_pos_gt_pnp, kp_projs_est_pnp, camera_K
+                )
+                pnp_attempts_successful.append(pnp_retval)
+
+                if pnp_retval:
+                    if opt.rf:
+                        # print("Introducing 3D refinement!!!")
+                        
+                        x,y,z,w = quaternion.tolist()
+                        # print('quaternion start', quaternion)
+                        quat_init = np.array([w,x,y,z]).reshape(1,4)
+                        trans_init = np.array(translation).reshape(1, 3)
+                        num_pt = kp_pos_gt_pnp.shape[0]
+                        x2d = kp_projs_est_pnp
+                        x2d_rep = []
+                        for x in kp_pos_gt_pnp:
+                            #quat_init:(1,4),trans_init(1,3),quat_init[0]:(4,)
+                            x2d_rep_i = camera_K @ (get_new_point_from_quaternion(x,quat_init[0]) + trans_init).T
+                            x2d_rep_i[0]/=x2d_rep_i[2]
+                            x2d_rep_i[1]/=x2d_rep_i[2]
+                            x2d_rep.append(x2d_rep_i[0:2])
+                        x2d_rep = np.array(x2d_rep).squeeze()
+                        
+                        kp, _ = x2d_rep.shape
+                        distance_sq = np.linalg.norm((x2d-x2d_rep), axis=-1)**2
+                        distances += distance_sq.tolist()
+                        distance_sq = distance_sq.reshape(kp, 1)
+                        distance_sq = np.repeat(distance_sq, 2, axis=-1)
+                        # print("dis", distance_sq)
+                        
+                        weights = get_weights(num_pt,distance_sq)
+                        start = time.perf_counter()
+                        # register_GN((7，2),(7,3), quat_init:(1,4),trans_init(1,3)
+                        # print("num_pt", num_pt)
+                        quat, T = register_GN_C(kp_projs_est_pnp,kp_pos_gt_pnp, quat_init, trans_init, weights, camera_K, num_pt)
+                        first = time.perf_counter()
+                        #quat:(4,),T:(3,)
+                        quat = torch.tensor(quat).view(1,4)
+                        T = torch.tensor(T).view(3,1)
+                        if torch.isnan(quat).any() or torch.isnan(T).any():
+                            # print("quaternian isnan", quaternion)
+                            x,y,z,w = quaternion.tolist()
+                            quat = torch.from_numpy(np.array([w,x,y,z])).view(1, 4)
+                            T = translation
+                            # ooo+=1
+                            # timesum.append(first - start)
+
+
+                        poses_xyzxyzw.append(T.tolist() + quat.tolist()[0][1:] + quat.tolist()[0][:1])
+                        T = torch.tensor(T).view(3,1)
+                        quat = torch.tensor((quat)).view(1,4)
+                        #T:tensor(3,1),quat:tensor(1,4)
+                        add1 = dream.geometric_vision.add_from_pose_tensor(
+                            T, quat, kp_pos_gt_pnp, camera_K
+                        )
+                        translation = torch.tensor(translation).view(3, 1)
+                        # print("last quaternion", quaternion)
+                        x,y,z,w = quaternion.tolist()
+                        quaternion = torch.from_numpy(np.array([w,x,y,z])).view(1, 4)
+                        add2 = dream.geometric_vision.add_from_pose_tensor(
+                            translation, quaternion, kp_pos_gt_pnp, camera_K
+                        )
+                        
+                        print("refine add", add1)
+                        print("original add", add2)
+                            
+                        add = min(add1, add2)
+                    else:
+                        poses_xyzxyzw.append(translation.tolist() + quaternion.tolist())
+                        add = dream.geometric_vision.add_from_pose(
+                            translation, quaternion, kp_pos_gt_pnp, camera_K
+                        )
+                else:
+                    poses_xyzxyzw.append([-999.99] * 7)
+                    add = -999.99
+
+                pnp_add.append(add)
+
+        pnp_path = os.path.join(output_dir, f"{opt.is_real}_{multiframe}_pnp_results.csv")
+        sample_names = [x["name"] for x in sample_results]
+        write_pnp_csv(
+            pnp_path,
+            sample_names,
+            pnp_attempts_successful,
+            poses_xyzxyzw,
+            pnp_add,
+            all_n_inframe_projs_gt,
+        )
+        pnp_results = pnp_metrics(pnp_add, all_n_inframe_projs_gt)
+        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+
+    def print_to_screen_and_file(file, text):
+        print(text)
+        file.write(text + "\n")
+    results_log_path = os.path.join(output_dir, "analysis_results.txt")
+    with open(results_log_path, "w") as f:
+        if pnp_analysis:
+            n_pnp_possible = pnp_results["num_pnp_possible"]
+            if n_pnp_possible > 0:
+                n_pnp_successful = pnp_results["num_pnp_found"]
+                n_pnp_fails = pnp_results["num_pnp_not_found"]
+                print_to_screen_and_file(
+                    f,
+                    "Percentage of frames where PNP failed when viable (incorrect): {:.3f}% ({}/{})".format(
+                        float(n_pnp_fails) / float(n_pnp_possible) * 100.0,
+                        n_pnp_fails,
+                        n_pnp_possible,
+                    ),
+                )
+                print_to_screen_and_file(
+                    f,
+                    "Percentage of frames where PNP was successful when viable (correct): {:.3f}% ({}/{})".format(
+                        float(n_pnp_successful) / float(n_pnp_possible) * 100.0,
+                        n_pnp_successful,
+                        n_pnp_possible,
+                    ),
+                )
+                print_to_screen_and_file(
+                    f,
+                    "ADD (m) for frames where PNP was successful when viable (n = {}):".format(
+                        n_pnp_successful
+                    ),
+                )
+                print_to_screen_and_file(
+                    f, "   AUC: {:.5f}".format(pnp_results["add_auc"])
+                )
+                print_to_screen_and_file(
+                    f,
+                    "      AUC threshold: {:.5f}".format(pnp_results["add_auc_thresh"]),
+                )
+                print_to_screen_and_file(
+                    f, "   Mean: {:.5f}".format(pnp_results["add_mean"])
+                )
+                print_to_screen_and_file(
+                    f, "   Median: {:.5f}".format(pnp_results["add_median"])
+                )
+                print_to_screen_and_file(
+                    f, "   Std Dev: {:.5f}".format(pnp_results["add_std"])
+                )
+            else:
+                print_to_screen_and_file(f, "No frames where PNP is possible.")
+
+            print_to_screen_and_file(f, "")
+
+    
+        
+
+
+                
+
+                
+
+            
+
+
+
+
+
+
+
 def analyze_ndds_center_dream_dataset(
     json_list, # 在外面直接写一个dataset就好了，需要注意它的debug_node为LIGHT
     detected_kp_proj_list,
@@ -932,7 +1460,7 @@ def analyze_ndds_center_dream_dataset(
         image_raw_resolution,
         real=is_real
     )
-    keypoint_path = os.path.join(output_dir, "keypoints.csv")
+    keypoint_path = os.path.join(output_dir, f"{opt.is_real}_keypoints.csv")
     sample_names = [x[1]["name"] for x in sample_results]
 
     write_keypoint_csv(
@@ -1016,13 +1544,14 @@ def analyze_ndds_center_dream_dataset(
                     weights = get_weights(num_pt,distance_sq)
                     start = time.perf_counter()
                     # register_GN((7，2),(7,3), quat_init:(1,4),trans_init(1,3)
-                    quat, T = register_GN_C( kp_projs_est_pnp,kp_pos_gt_pnp, quat_init, trans_init, weights, camera_K, 7)
+                    # print("num_pt", num_pt)
+                    quat, T = register_GN_C(kp_projs_est_pnp,kp_pos_gt_pnp, quat_init, trans_init, weights, camera_K, num_pt)
                     first = time.perf_counter()
                     #quat:(4,),T:(3,)
                     quat = torch.tensor(quat).view(1,4)
                     T = torch.tensor(T).view(3,1)
                     if torch.isnan(quat).any() or torch.isnan(T).any():
-                        print("quaternian isnan", quaternion)
+                        # print("quaternian isnan", quaternion)
                         x,y,z,w = quaternion.tolist()
                         quat = torch.from_numpy(np.array([w,x,y,z])).view(1, 4)
                         T = translation
@@ -1044,9 +1573,10 @@ def analyze_ndds_center_dream_dataset(
                     add2 = dream.geometric_vision.add_from_pose_tensor(
                         translation, quaternion, kp_pos_gt_pnp, camera_K
                     )
+                    
                     print("refine add", add1)
                     print("original add", add2)
-                    
+                        
                     add = min(add1, add2)
                 else:
                     poses_xyzxyzw.append(translation.tolist() + quaternion.tolist())
@@ -1062,7 +1592,7 @@ def analyze_ndds_center_dream_dataset(
         distances_np = np.array(distances)
         np.savetxt("/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/dis.txt", distances_np)
 
-        pnp_path = os.path.join(output_dir, "pnp_results.csv")
+        pnp_path = os.path.join(output_dir, f"{opt.is_real}_pnp_results.csv")
         write_pnp_csv(
             pnp_path,
             sample_names,
@@ -1277,7 +1807,6 @@ def write_keypoint_csv(keypoint_path, sample_names, keypoints_detected, keypoint
                 + kp_gt.reshape(n_keypoint_elements).tolist()
             )
             csv_writer.writerow(entry)
-
 
 # write_pnp_csv: poses is expected to be array of [x y z x y z w]
 def write_pnp_csv(

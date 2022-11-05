@@ -15,7 +15,7 @@ import numpy as np
 from progress.bar import Bar
 import time
 import torch
-import math
+import math 
 import os
 from ruamel.yaml import YAML
 from copy import deepcopy
@@ -52,6 +52,7 @@ class DreamDetector(object):
         self.model = self.model.to(opt.device)
         self.model.eval()
         
+        # opt = opts().update_dataset_info_and_set_heads_dream(opt, 7, network_input_resolution_transpose)
         self.opt = opt
 #        self.mean = np.array([0.5, 0.5, 0.5], dtype=np.float32).reshape(1, 1, 3)
 #        self.std = np.array([0.5, 0.5, 0.5], dtype=np.float32).reshape(1, 1, 3)
@@ -70,7 +71,9 @@ class DreamDetector(object):
         self.phase = opt.phase
         self.dataset_path = "/root/autodl-tmp/dream_data/data/real"
         # self.output_dir = output_dir.split('/')[-2]
-        self.output_dir = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/ct_infer_img/overlay_1026"
+        self.output_dir = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/ct_infer_img/teaser_imgs1105/"
+        self.pre_hm_teaser = None
+        dream.utilities.exists_or_mkdir(self.output_dir)
         
         # self.output_dir = output_dir.split('/')[-1][:6]
         # self.output_dir = f"/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/ct_infer_img/real/{output_dir}"
@@ -259,6 +262,16 @@ class DreamDetector(object):
             output, dets, forward_time, hms = self.process(
               images, self.pre_images, pre_hms, repro_hms, pre_inds, return_time=True, pre_hms_cls=pre_hms_cls, repro_hms_cls=repro_hms_cls)
             
+            
+            # 保存pipeline需要的图
+#            self.exists_or_mkdir(os.path.join(self.output_dir, f"{self.idx}"))
+#            cv2.imwrite(os.path.join(self.output_dir, f"{self.idx}", f"{str(i).zfill(4)}_img.png"), image)
+#            pre_hm_img = dream.image_proc.image_from_belief_map(pre_hms[0])
+#            repro_hm_img = dream.image_proc.image_from_belief_map(repro_hms[0])
+#            pre_hm_img.save(os.path.join(self.output_dir, f"{self.idx}", f"{str(i-1).zfill(4)}_prehms.png"))
+#            repro_hm_img.save(os.path.join(self.output_dir, f"{self.idx}", f"{str(i).zfill(4)}_repro.png"))
+            
+            
             # topk_inp_coords = output["repro_hm_topk_ind"]
             net_time += forward_time - pre_process_time
             decode_time = time.time()
@@ -302,7 +315,9 @@ class DreamDetector(object):
             # add tracking id to results
             results = self.tracker.step(results, public_det)
             self.pre_images = images
-            self.pre_image = Image.fromarray(np.uint8(image)) 
+            self.pre_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            # print("image.shape", self.pre_image.shape)
+            self.pre_image = Image.fromarray(np.uint8(self.pre_image)) 
 
 
 
@@ -331,7 +346,10 @@ class DreamDetector(object):
                 ret.update({'generic': self.debugger.imgs['generic']}) 
             except:
                 pass
-                
+        
+        if i >= 2:
+            self._get_teaser_imgs(self.pre_hm_teaser, self.pre_image, self.detected_kps, meta, self.output_dir, i) 
+            
         self.detected_kps = self._get_final_kps(results)
         self.pre_json_path = json_path
         
@@ -340,10 +358,52 @@ class DreamDetector(object):
         # output_dirs = {head : os.path.join(self.output_dir, f"{self.is_real}_{head}_overlay") for head in ["whole", "gt", "dt"]}
         # # self.exists_or_mkdir(output_dirs)
         # next_img_PIL = Image.fromarray(np.uint8(image))
-        # self._get_overlay_imgs(hms, next_img_PIL, self.detected_kps, self.pre_json_path, meta, output_dirs, i)        
+        # self._get_overlay_imgs(hms, next_img_PIL, self.detected_kps, self.pre_json_path, meta, output_dirs, i)      
+        
+        # draw teaser figure
+        # self._get_teaser_imgs(pre_hms, self.pre_image, self.detected_kps, meta, self.output_dir, i)  
 
         return ret, self.detected_kps
 
+    
+    def _get_teaser_imgs(self, hms, img, detected_kps, meta, output_dir, i):
+        # 输入的hms为1x1x480x480
+         
+        detected_kps = detected_kps.tolist()
+        gt_kps_raw = []
+
+        
+        hms_imgs = []
+        trans = get_affine_transform(meta["c"], meta["s"], 0, (meta["inp_width"], meta["inp_height"]), inv=1)
+        
+        # print("hms.shape", hms.shape)
+        origin_hms = cv2.warpAffine(hms[0][0].cpu().numpy(), trans, (meta["width"], meta["height"]),flags=cv2.INTER_LINEAR)
+        origin_hms_tensor = torch.from_numpy(origin_hms).to(self.opt.device)
+        # print("hms_tensor", origin_hms_tensor.shape)
+        origin_hms_img = dream.image_proc.image_from_belief_map(origin_hms_tensor, normalization_method=6)
+        
+        blend_img = Image.blend(origin_hms_img, img, alpha=0.5)
+        
+        for idx, dt_kp_raw in enumerate(detected_kps):
+            ct_dt = [0,0]
+            ct_dt[0] = np.clip(dt_kp_raw[0], 0, meta["width"]-1)
+            ct_dt[1] = np.clip(dt_kp_raw[1], 0, meta["height"]-1)
+            blend_img = dream.image_proc.overlay_points_on_image(
+                        blend_img,
+                        [ct_dt],
+                        [self.keypoint_names[idx].replace("panda_", "")],
+                        annotation_color_dot=["white"],
+                        annotation_color_text=["white"],
+#                        annotation_color_dot=["green", "red"],
+                        point_diameter=4,
+                        )
+                        
+        save_dir = os.path.join(output_dir, str(self.idx).zfill(2))
+        self.exists_or_mkdir(save_dir)
+        img.save(os.path.join(save_dir, f"{str(i).zfill(5)}_img.png"))
+        # hm_whole_mosaic.save(os.path.join(save_dir, f"{str(i).zfill(5)}_heatmap.png"))
+        blend_img.save(os.path.join(save_dir, f"{str(i).zfill(5)}_blend_img.png"))
+        origin_hms_img.save(os.path.join(save_dir, f"{str(i).zfill(5)}_hms.png"))
     
     def _transform_scale(self, image, scale=1):
       '''
@@ -591,9 +651,14 @@ class DreamDetector(object):
         # t4 = time.time()
         # print("t4 - t3", t4 - t3)
         
+        
         pre_hm = dream.utilities.get_prev_hm_wo_noise(prev_kp_projs_dt, trans_input, inp_width, inp_height, meta['width'], meta['height'])
         # pre_hm = dream.utilities.get_prev_hm_wo_noise_old(kps_raw_np, trans_input, inp_width, inp_height)
         pre_hm = torch.from_numpy(pre_hm).view(1, 1, inp_height, inp_width)
+        
+        self.pre_hm_teaser = dream.utilities.get_prev_hm_wo_noise_teaser(prev_kp_projs_dt, trans_input, inp_width, inp_height, meta['width'], meta['height'])
+        self.pre_hm_teaser = torch.from_numpy(self.pre_hm_teaser).view(1, 1, inp_height, inp_width)
+        
         repro_hm = dream.utilities.get_prev_hm_wo_noise(next_kp_projs_est, trans_input,inp_width, inp_height, meta['width'], meta['height'])
         # repro_hm = dream.utilities.get_prev_hm_wo_noise_old(next_kp_projs_est, trans_input,inp_width, inp_height)
         repro_hm = torch.from_numpy(repro_hm).view(1, 1, inp_height, inp_width)
