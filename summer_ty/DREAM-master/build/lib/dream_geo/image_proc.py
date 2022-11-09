@@ -586,7 +586,7 @@ def overlay_points_on_image(
                 image_point_names[idx_point],
                 text_position,
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.75,
+                0.5,
                 annot_color_text,
                 2,
             )

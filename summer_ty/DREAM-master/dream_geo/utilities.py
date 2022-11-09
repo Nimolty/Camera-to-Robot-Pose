@@ -11,8 +11,32 @@ import torch
 import cv2
 import math
 from copy import deepcopy
+import json
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+def load_x3d(json_path, keypoint_names):
+    json_in = open(json_path, 'r')
+    json_data = json.load(json_in)
+    json_data = json_data["objects"][0]["keypoints"]
+    x3d_list = []
+    for idx, kp_name in enumerate(keypoint_names):
+        data = json_data[idx]
+        assert kp_name == data["name"]
+        x3d_wrt_cam = data["location"]
+        x3d_list.append(x3d_wrt_cam)
+    return x3d_list
+
+def load_x3d_rob(json_path, keypoint_names):
+    json_in = open(json_path, 'r')
+    json_data = json.load(json_in)
+    json_data = json_data["objects"][0]["keypoints"]
+    x3d_list = []
+    for idx, kp_name in enumerate(keypoint_names):
+        data = json_data[idx]
+        assert kp_name == data["name"]
+        x3d_wrt_cam = data["location_wrt_rob"]
+        x3d_list.append(x3d_wrt_cam)
+    return x3d_list
 def exists_or_mkdir(path):
     if not os.path.exists(path):
         os.makedirs(path)
@@ -903,6 +927,18 @@ def get_prev_hm_wo_noise_teaser(kp_projs_raw, trans_input,input_w, input_h, raw_
             draw_umich_gaussian_teaser(pre_hm, ct, radius, k=conf) # lost_disturb对应fn randomly removing detections with probability \lambda_fn
 
     return pre_hm 
+
+def get_prev_hm_wo_noise_dream(kp_projs_raw, raw_width, raw_height):
+    pre_hm = np.zeros((raw_height, raw_width), dtype=np.float32)
+    if kp_projs_raw is not None:
+        n_kp, _ = kp_projs_raw.shape
+        radius = 12
+        for i in range(n_kp):
+            ct = deepcopy(kp_projs_raw[i])
+            conf = 1
+            draw_umich_gaussian_teaser(pre_hm, ct, radius, k=conf)
+    
+    return pre_hm
 
 def get_prev_hm_wo_noise_cls(kp_projs_raw, kp_gts_raw, trans_input, input_w, input_h, \
                              raw_width, raw_height, mode=None):

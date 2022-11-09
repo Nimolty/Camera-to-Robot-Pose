@@ -11,6 +11,231 @@ import torch
 import torch.nn as nn
 import torchvision.models as tviz_models
 
+class SoftArgmaxPavlo(torch.nn.Module):
+    def __init__(self, n_keypoints=5, learned_beta=False, initial_beta=25.0):
+        super(SoftArgmaxPavlo, self).__init__()
+        self.avgpool = torch.nn.AvgPool2d(7, stride=1, padding=3)
+        if learned_beta:
+            self.beta = torch.nn.Parameter(torch.ones(n_keypoints) * initial_beta)
+        else:
+            self.beta = (torch.ones(n_keypoints) * initial_beta).cuda()
+
+    def forward(self, heatmaps, size_mult=1.0):
+
+        epsilon = 1e-8
+        bch, ch, n_row, n_col = heatmaps.size()
+        n_kpts = ch
+
+        beta = self.beta
+
+        # input has the shape (#bch, n_kpts+1, img_sz[0], img_sz[1])
+        # +1 is for the Zrel
+        heatmaps2d = heatmaps[:, :n_kpts, :, :]
+        heatmaps2d = self.avgpool(heatmaps2d)
+
+        # heatmaps2d has the shape (#bch, n_kpts, img_sz[0]*img_sz[1])
+        heatmaps2d = heatmaps2d.contiguous().view(bch, n_kpts, -1)
+
+        # getting the max value of the maps across each 2D matrix
+        map_max = torch.max(heatmaps2d, dim=2, keepdim=True)[0]
+
+        # reducing the max from each map
+        # this will make the max value zero and all other values
+        # will be negative.
+        # max_reduced_maps has the shape (#bch, n_kpts, img_sz[0]*img_sz[1])
+        heatmaps2d = heatmaps2d - map_max
+
+        beta_ = beta.view(1, n_kpts, 1).repeat(1, 1, n_row * n_col)
+        # due to applying the beta value, the non-max values will be further
+        # pushed towards zero after applying the exp function
+        exp_maps = torch.exp(beta_ * heatmaps2d)
+        # normalizing the exp_maps by diving it to the sum of elements
+        # exp_maps_sum has the shape (#bch, n_kpts, 1)
+        exp_maps_sum = torch.sum(exp_maps, dim=2, keepdim=True)
+        exp_maps_sum = exp_maps_sum.view(bch, n_kpts, 1, 1)
+        normalized_maps = exp_maps.view(bch, n_kpts, n_row, n_col) / (
+            exp_maps_sum + epsilon
+        )
+
+        col_vals = torch.arange(0, n_col) * size_mult
+        col_repeat = col_vals.repeat(n_row, 1)
+        col_idx = col_repeat.view(1, 1, n_row, n_col).cuda()
+        # col_mat gives a column measurement matrix to be used for getting
+        # 'x'. It is a matrix where each row has the sequential values starting
+        # from 0 up to n_col-1:
+        # 0,1,2, ..., n_col-1
+        # 0,1,2, ..., n_col-1
+        # 0,1,2, ..., n_col-1
+
+        row_vals = torch.arange(0, n_row).view(n_row, -1) * size_mult
+        row_repeat = row_vals.repeat(1, n_col)
+        row_idx = row_repeat.view(1, 1, n_row, n_col).cuda()
+        # row_mat gives a row measurement matrix to be used for getting 'y'.
+        # It is a matrix where each column has the sequential values starting
+        # from 0 up to n_row-1:
+        # 0,0,0, ..., 0
+        # 1,1,1, ..., 1
+        # 2,2,2, ..., 2
+        # ...
+        # n_row-1, ..., n_row-1
+
+        col_idx = Variable(col_idx, requires_grad=False)
+        weighted_x = normalized_maps * col_idx.float()
+        weighted_x = weighted_x.view(bch, n_kpts, -1)
+        x_vals = torch.sum(weighted_x, dim=2)
+
+        row_idx = Variable(row_idx, requires_grad=False)
+        weighted_y = normalized_maps * row_idx.float()
+        weighted_y = weighted_y.view(bch, n_kpts, -1)
+        y_vals = torch.sum(weighted_y, dim=2)
+
+        out = torch.stack((x_vals, y_vals), dim=2)
+
+        return out
+
+# Resnet 
+class ResnetSimple(nn.Module):
+    def __init__(
+        self, n_keypoints=7, freeze=False, pretrained=True, full=False,
+    ):
+        super(ResnetSimple, self).__init__()
+        net = tviz_models.resnet101(pretrained=pretrained)
+        self.full = full
+        self.conv1 = net.conv1
+        self.bn1 = net.bn1
+        self.relu = net.relu
+        self.maxpool = net.maxpool
+
+        self.layer1 = net.layer1
+        self.layer2 = net.layer2
+        self.layer3 = net.layer3
+        self.layer4 = net.layer4
+
+        # upconvolution and final layer
+        BN_MOMENTUM = 0.1
+        if not full:
+            self.upsample = nn.Sequential(
+                nn.ConvTranspose2d(
+                    in_channels=2048,
+                    out_channels=256,
+                    kernel_size=4,
+                    stride=2,
+                    padding=1,
+                    output_padding=0,
+                ),
+                nn.BatchNorm2d(256, momentum=BN_MOMENTUM),
+                nn.ReLU(inplace=True),
+                nn.ConvTranspose2d(
+                    in_channels=256,
+                    out_channels=256,
+                    kernel_size=4,
+                    stride=2,
+                    padding=1,
+                    output_padding=0,
+                ),
+                nn.BatchNorm2d(256, momentum=BN_MOMENTUM),
+                nn.ReLU(inplace=True),
+                nn.ConvTranspose2d(
+                    in_channels=256,
+                    out_channels=256,
+                    kernel_size=4,
+                    stride=2,
+                    padding=1,
+                    output_padding=0,
+                ),
+                nn.BatchNorm2d(256, momentum=BN_MOMENTUM),
+                nn.ReLU(inplace=True),
+                nn.ConvTranspose2d(
+                    in_channels=256,
+                    out_channels=256,
+                    kernel_size=4,
+                    stride=2,
+                    padding=1,
+                    output_padding=0,
+                ),
+                nn.BatchNorm2d(256, momentum=BN_MOMENTUM),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(256, n_keypoints, kernel_size=1, stride=1),
+            )
+        else:
+            self.upsample = nn.Sequential(
+                nn.ConvTranspose2d(
+                    in_channels=2048,
+                    out_channels=256,
+                    kernel_size=4,
+                    stride=2,
+                    padding=1,
+                    output_padding=0,
+                ),
+                nn.BatchNorm2d(256, momentum=BN_MOMENTUM),
+                nn.ReLU(inplace=True),
+                nn.ConvTranspose2d(
+                    in_channels=256,
+                    out_channels=256,
+                    kernel_size=4,
+                    stride=2,
+                    padding=1,
+                    output_padding=0,
+                ),
+                nn.BatchNorm2d(256, momentum=BN_MOMENTUM),
+                nn.ReLU(inplace=True),
+                nn.ConvTranspose2d(
+                    in_channels=256,
+                    out_channels=256,
+                    kernel_size=4,
+                    stride=2,
+                    padding=1,
+                    output_padding=0,
+                ),
+                nn.BatchNorm2d(256, momentum=BN_MOMENTUM),
+                nn.ReLU(inplace=True),
+                nn.ConvTranspose2d(
+                    in_channels=256,
+                    out_channels=256,
+                    kernel_size=4,
+                    stride=2,
+                    padding=1,
+                    output_padding=0,
+                ),
+                nn.BatchNorm2d(256, momentum=BN_MOMENTUM),
+                nn.ReLU(inplace=True),
+            )
+            # This brings it up from 208x208 to 416x416
+            self.upsample2 = nn.Sequential(
+                nn.ConvTranspose2d(
+                    in_channels=256,
+                    out_channels=256,
+                    kernel_size=4,
+                    stride=2,
+                    padding=1,
+                    output_padding=0,
+                ),
+                nn.BatchNorm2d(256, momentum=BN_MOMENTUM),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(256, n_keypoints, kernel_size=1, stride=1),
+            )
+
+    def forward(self, x):
+
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+
+        x = self.upsample(x)
+
+        if self.full:
+            x = self.upsample2(x)
+        # print("x.shape", x.shape)
+        outputs = {}
+        outputs["hm"] = x
+        return [outputs]
+
 # Based on DopeHourglassBlockSmall, not using skipped connections
 class DreamHourglass(nn.Module):
     def __init__(
@@ -227,34 +452,34 @@ class DreamHourglass(nn.Module):
             "4", nn.Conv2d(32, self.n_keypoints, kernel_size=3, stride=1, padding=1)
         )
         
-        self.heads_1 = nn.Sequential()
-        self.heads_1.add_module(
-            "0", nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
-        )
-        self.heads_1.add_module("1", nn.ReLU(inplace=True))
-        self.heads_1.add_module(
-            "2", nn.Conv2d(64, 32, kernel_size=3, stride=1, padding=1)
-        )
-        self.heads_1.add_module("3", nn.ReLU(inplace=True))
-        self.heads_1.add_module(
-            "4", nn.Conv2d(32, 2, kernel_size=3, stride=1, padding=1)
-        )
-        
-        self.heads_2 = nn.Sequential()
-        self.heads_2.add_module(
-            "0", nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
-        )
-        self.heads_2.add_module("1", nn.ReLU(inplace=True))
-        self.heads_2.add_module(
-            "2", nn.Conv2d(64, 32, kernel_size=3, stride=1, padding=1)
-        )
-        self.heads_2.add_module("3", nn.ReLU(inplace=True))
-        self.heads_2.add_module(
-            "4", nn.Conv2d(32, 2, kernel_size=3, stride=1, padding=1)
-        )
+#        self.heads_1 = nn.Sequential()
+#        self.heads_1.add_module(
+#            "0", nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
+#        )
+#        self.heads_1.add_module("1", nn.ReLU(inplace=True))
+#        self.heads_1.add_module(
+#            "2", nn.Conv2d(64, 32, kernel_size=3, stride=1, padding=1)
+#        )
+#        self.heads_1.add_module("3", nn.ReLU(inplace=True))
+#        self.heads_1.add_module(
+#            "4", nn.Conv2d(32, 2, kernel_size=3, stride=1, padding=1)
+#        )
+#        
+#        self.heads_2 = nn.Sequential()
+#        self.heads_2.add_module(
+#            "0", nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
+#        )
+#        self.heads_2.add_module("1", nn.ReLU(inplace=True))
+#        self.heads_2.add_module(
+#            "2", nn.Conv2d(64, 32, kernel_size=3, stride=1, padding=1)
+#        )
+#        self.heads_2.add_module("3", nn.ReLU(inplace=True))
+#        self.heads_2.add_module(
+#            "4", nn.Conv2d(32, 2, kernel_size=3, stride=1, padding=1)
+#        )
         
 #        # Spatial softmax output of belief map
-#        if self.internalize_spatial_softmax:
+#        if 1:
 #            self.softmax = nn.Sequential()
 #            self.softmax.add_module(
 #                "0",
@@ -265,15 +490,15 @@ class DreamHourglass(nn.Module):
 #                ),
 #            )
 
-    def forward(self, img, pre_img, pre_hm):
+    def forward(self, x):
 #    def forward(self, x):
         
-        assert img.shape == pre_img.shape
-        assert pre_hm.shape[1] == 1
+#        assert img.shape == pre_img.shape
+#        assert pre_hm.shape[1] == 1
 #        print('img.shape', img.shape)
 #        print("pre_img.shape", pre_img.shape)
 #        print("pre_hm.shape", pre_hm.shape)
-        x = torch.cat((img, pre_img, pre_hm), dim=1)
+#        x = torch.cat((img, pre_img, pre_hm), dim=1)
 #        x = img
         # Encoder
         x_0_1 = self.layer_0_1_down(x)
@@ -331,15 +556,15 @@ class DreamHourglass(nn.Module):
                 y_0_out = self.upsample_0_1(y_0_out)
 
             output_head_0 = self.heads_0(y_0_out)
-            output_head_1 = self.heads_1(y_0_out)
-            output_head_2 = self.heads_2(y_0_out)
+#            output_head_1 = self.heads_1(y_0_out)
+#            output_head_2 = self.heads_2(y_0_out)
             
 
         # Output heads
         outputs = {}
         outputs["hm"] = output_head_0
-        outputs["reg"] = output_head_1
-        outputs["tracking"] = output_head_2
+        # outputs["reg"] = output_head_1
+        # outputs["tracking"] = output_head_2
         
 #        # Spatial softmax output of belief map
 #        if self.internalize_spatial_softmax:

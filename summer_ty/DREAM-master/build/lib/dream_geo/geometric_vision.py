@@ -7,6 +7,7 @@ import numpy as np
 from pyrr import Quaternion
 from copy import deepcopy
 import torch
+import transforms3d as tfs
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -201,6 +202,30 @@ def add_from_pose(translation, quaternion, keypoint_positions_wrt_cam_gt, camera
     # projs = point_projection_from_3d(camera_K, kp_pos_aligned)
     # temp = np.linalg.norm(kp_projs_est_pnp - projs, axis=1) # all of these should be below the inlier threshold above!
     kp_3d_errors = kp_pos_aligned - keypoint_positions_wrt_cam_gt
+    kp_3d_l2_errors = np.linalg.norm(kp_3d_errors, axis=1)
+    add = np.mean(kp_3d_l2_errors)
+    return add
+    
+def add_from_pose_he(translation, quaternion, keypoint_positions_wrt_cam_gt,keypoint_positions_wrt_rob_dt, camera_K):
+    #print(translation,quaternion)
+    transform = np.eye(4)
+    transform[:3, :3] = tfs.quaternions.quat2mat((quaternion[0], quaternion[1], quaternion[2], quaternion[3]))
+    transform[:3, -1] = translation
+    kp_pos_gt_homog = np.hstack(
+        (
+            keypoint_positions_wrt_cam_gt,
+            np.ones((keypoint_positions_wrt_cam_gt.shape[0], 1)),
+        )
+    )
+    # transform = np.linalg.inv(transform)
+    kp_pos_aligned = np.transpose(np.matmul(transform, np.transpose(kp_pos_gt_homog)))[
+        :, :3
+    ]
+    #print(kp_pos_aligned,keypoint_positions_wrt_cam_gt)
+    # The below lines were useful when debugging pnp ransac, so left here for now
+    # projs = point_projection_from_3d(camera_K, kp_pos_aligned)
+    # temp = np.linalg.norm(kp_projs_est_pnp - projs, axis=1) # all of these should be below the inlier threshold above!
+    kp_3d_errors = kp_pos_aligned - keypoint_positions_wrt_rob_dt
     kp_3d_l2_errors = np.linalg.norm(kp_3d_errors, axis=1)
     add = np.mean(kp_3d_l2_errors)
     return add

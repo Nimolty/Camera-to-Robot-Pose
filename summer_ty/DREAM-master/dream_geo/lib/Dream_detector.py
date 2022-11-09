@@ -19,7 +19,7 @@ import math
 import os
 from ruamel.yaml import YAML
 from copy import deepcopy
-from PIL import Image
+from PIL import Image, ImageEnhance
 
 from .model.model import create_model, load_model, create_dream_hourglass
 from .model.decode import dream_generic_decode
@@ -45,11 +45,15 @@ class DreamDetector(object):
         # print(f'opt.arch : {opt.arch}, opt.heads : {opt.heads}, opt.head_conv : {opt.head_conv}')
         if is_ct:
             self.model = create_model(opt.arch, opt.heads, opt.head_conv, opt=opt)
+            self.model = load_model(self.model, opt.load_model, opt)
+            self.model = self.model.to(opt.device)
         else:
-            self.model = create_dream_hourglass()
+            self.model = torch.nn.DataParallel(create_dream_hourglass(opt.dream_mode, opt.dream_deconv_decoder))
+            self.model.load_state_dict(torch.load(opt.load_model))
+            self.model = self.model.cuda()
         # self.model = create_model(opt.arch, opt.heads, opt.head_conv, opt=opt)
-        self.model = load_model(self.model, opt.load_model, opt)
-        self.model = self.model.to(opt.device)
+        # self.model = load_model(self.model, opt.load_model, opt)
+        
         self.model.eval()
         
         # opt = opts().update_dataset_info_and_set_heads_dream(opt, 7, network_input_resolution_transpose)
@@ -71,7 +75,8 @@ class DreamDetector(object):
         self.phase = opt.phase
         self.dataset_path = "/root/autodl-tmp/dream_data/data/real"
         # self.output_dir = output_dir.split('/')[-2]
-        self.output_dir = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/ct_infer_img/teaser_imgs1105/"
+        # self.output_dir = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/ct_infer_img/ours_real_1108/"
+        self.output_dir = "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/ct_infer_img/ours_real_1017_with_background/"
         self.pre_hm_teaser = None
         dream.utilities.exists_or_mkdir(self.output_dir)
         
@@ -79,13 +84,25 @@ class DreamDetector(object):
         # self.output_dir = f"/root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/ct_infer_img/real/{output_dir}"
         # self.exists_or_mkdir(self.output_dir)
         self.keypoint_names = keypoint_names
-        if self.is_real:
+        if self.is_real and not self.opt.is_real_ros:
             self.camera_data_path = os.path.join(self.dataset_path, self.is_real, "_camera_settings.json")
             print('camera_data_path', self.camera_data_path)
             self.camera_K = self.load_camera_intrinsics(self.camera_data_path)
             print('camera_K', self.camera_K)
         else:
             self.camera_K = np.array([[502.30, 0.0, 319.5], [0.0, 502.30, 179.5], [0.0, 0.0, 1.0]])
+        
+        if self.opt.is_real_ros:
+            print("multi_frame_real_ros", self.opt.is_real_ros)
+            fx = 910.4185791/2.0
+            fy = 909.881958/2.0
+            cx = 635.54394532/2.0
+            cy = 359.45794678 / 2.0
+            self.camera_K = np.array(
+              [[fx, 0.0, cx],[0.0, fy, cy],[0.0, 0.0, 1.0]]
+            )
+
+        print("self.camera_K", self.camera_K)
         # self.camera_K = np.array([[615.52392578125, 0, 328.2606506347656], [0.0, 615.2191772460938, 251.7917022705078], [0, 0, 1.0]])
         # self.debugger = Debugger(opt=opt, dataset=self.trained_dataset)
     
@@ -114,7 +131,8 @@ class DreamDetector(object):
         return camera_K
         
     
-    def run(self, image_or_path_or_tensor, i, json_path, meta={}, is_final=False, save_dir=None):
+    def run(self, image_or_path_or_tensor, i, json_path, meta={}, is_final=False, save_dir=None, teaser_flag=False, img_path=None):
+        # self.img_path = img_path
         load_time, pre_time, net_time, dec_time, post_time = 0, 0, 0, 0, 0
         merge_time, track_time, tot_time, display_time = 0, 0, 0, 0
         # self.debugger.clear()
@@ -309,15 +327,15 @@ class DreamDetector(object):
         end_time = time.time()
         merge_time += end_time - post_process_time
         
-        if self.opt.tracking:
+        if self.opt.tracking and self.opt.is_ct:
             # public detection mode in MOT challenge
             public_det = meta['cur_dets'] if self.opt.public_det else None
             # add tracking id to results
             results = self.tracker.step(results, public_det)
-            self.pre_images = images
-            self.pre_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        self.pre_images = images
+        self.pre_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             # print("image.shape", self.pre_image.shape)
-            self.pre_image = Image.fromarray(np.uint8(self.pre_image)) 
+        self.pre_image = Image.fromarray(np.uint8(self.pre_image)) 
 
 
 
@@ -347,11 +365,17 @@ class DreamDetector(object):
             except:
                 pass
         
-        if i >= 2:
-            self._get_teaser_imgs(self.pre_hm_teaser, self.pre_image, self.detected_kps, meta, self.output_dir, i) 
-            
+        # draw teaser
+        # if i >= 2:
+        #    self._get_teaser_imgs(self.pre_hm_teaser, self.pre_image, self.detected_kps, meta, self.output_dir, i) 
+        if teaser_flag and i >= 2:
+          self._get_teaser_imgs(self.pre_hm_teaser, self.pre_image, self.detected_kps, meta, self.output_dir, i) 
+          # self.blend_imgs_and_hms(self.pre_image, self.pre_hm_teaser, self.detected_kps, meta, self.output_dir, i)
+
+
         self.detected_kps = self._get_final_kps(results)
         self.pre_json_path = json_path
+        self.pre_img_path = img_path
         
 #        print("detected_kps", self.detected_kps)
         
@@ -360,30 +384,111 @@ class DreamDetector(object):
         # next_img_PIL = Image.fromarray(np.uint8(image))
         # self._get_overlay_imgs(hms, next_img_PIL, self.detected_kps, self.pre_json_path, meta, output_dirs, i)      
         
-        # draw teaser figure
-        # self._get_teaser_imgs(pre_hms, self.pre_image, self.detected_kps, meta, self.output_dir, i)  
 
-        return ret, self.detected_kps
+        return ret, self.detected_kps, self.camera_K
 
     
     def _get_teaser_imgs(self, hms, img, detected_kps, meta, output_dir, i):
         # 输入的hms为1x1x480x480
-         
-        detected_kps = detected_kps.tolist()
-        gt_kps_raw = []
+        
+        if self.is_ct:
+            detected_kps = detected_kps.tolist()
+            gt_kps_raw = []
+            hms_imgs = []
+            trans = get_affine_transform(meta["c"], meta["s"], 0, (meta["inp_width"], meta["inp_height"]), inv=1)
+            # print("hms.shape", hms.shape)
+            origin_hms = cv2.warpAffine(hms[0][0].cpu().numpy(), trans, (meta["width"], meta["height"]),flags=cv2.INTER_LINEAR)
+            origin_hms_tensor = torch.from_numpy(origin_hms).to(self.opt.device)
+            # print("hms_tensor", origin_hms_tensor.shape)
+            origin_hms_img = dream.image_proc.image_from_belief_map(origin_hms_tensor, normalization_method=6)
+            origin_hms_np = np.asarray(origin_hms_img)
+            # print(origin_hms_np.shape)
+            blend_img = Image.blend(origin_hms_img, img, alpha=0.5)
+        else:
+            img = Image.open(self.pre_img_path).convert("RGB")
+            dt_kps_raw = dream.image_proc.convert_keypoints_to_raw_from_netin(
+                         detected_kps,
+                         (self.opt.input_w, self.opt.input_h),
+                         img.size,
+                         "shrink-and-crop", 
+                     )
+            # print('dt_kps_raw', dt_kps_raw)
+            origin_hms = dream.utilities.get_prev_hm_wo_noise_dream(dt_kps_raw, img.size[0], img.size[1])
+            origin_hms_tensor = torch.from_numpy(origin_hms).to(self.opt.device)
+            origin_hms_img = dream.image_proc.image_from_belief_map(origin_hms_tensor, normalization_method=6)
+            blend_img = Image.blend(origin_hms_img, img, alpha=0.5)
+        
+        x3d_list = dream.utilities.load_x3d(self.pre_json_path, self.keypoint_names)
+        x3d_wrt_cam_np = np.array(x3d_list)
+        x3d_proj_np = (self.camera_K @ x3d_wrt_cam_np.T).T
+        n_kp, _ = x3d_proj_np.shape
+        gt_kp_raws = np.zeros((n_kp, 2))
+        gt_kp_raws[:, 0] = x3d_proj_np[:, 0] / x3d_proj_np[:, 2]
+        gt_kp_raws[:, 1] = x3d_proj_np[:, 1] / x3d_proj_np[:, 2]
 
-        
-        hms_imgs = []
+
+        for idx, gt_kp_raw in enumerate(gt_kp_raws):
+            ct_gt = [0,0]
+            ct_gt[0] = np.clip(gt_kp_raw[0], 0, 640-1)
+            ct_gt[1] = np.clip(gt_kp_raw[1], 0, 360-1)
+            blend_img = dream.image_proc.overlay_points_on_image(
+                        blend_img,
+                        [ct_gt],
+                        annotation_color_dot=["blue"],
+                        point_diameter=4,
+                        )
+                        
+        save_dir = os.path.join(output_dir, str(self.idx).zfill(2))
+        self.exists_or_mkdir(save_dir)
+        img.save(os.path.join(save_dir, f"{str(i).zfill(5)}_img.png"))
+        # hm_whole_mosaic.save(os.path.join(save_dir, f"{str(i).zfill(5)}_heatmap.png"))
+        blend_img.save(os.path.join(save_dir, f"{str(i).zfill(5)}_blend_img.png"))
+        origin_hms_img.save(os.path.join(save_dir, f"{str(i).zfill(5)}_hms.png"))
+    
+    def blend_imgs_and_hms(self, img, hms, detected_kps, meta, output_dir, i):
+        # expected img.size == hms.size
+        # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         trans = get_affine_transform(meta["c"], meta["s"], 0, (meta["inp_width"], meta["inp_height"]), inv=1)
-        
-        # print("hms.shape", hms.shape)
-        origin_hms = cv2.warpAffine(hms[0][0].cpu().numpy(), trans, (meta["width"], meta["height"]),flags=cv2.INTER_LINEAR)
-        origin_hms_tensor = torch.from_numpy(origin_hms).to(self.opt.device)
+        hms = cv2.warpAffine(hms[0][0].cpu().numpy(), trans, (meta["width"], meta["height"]),flags=cv2.INTER_LINEAR)
+        thresh = 0.3
+        index_full = np.where(hms > thresh)
+        index_zero = np.where(hms <= thresh)
+        hms[index_zero] = 0
+        origin_hms_tensor = torch.from_numpy(hms).to(self.opt.device)
         # print("hms_tensor", origin_hms_tensor.shape)
         origin_hms_img = dream.image_proc.image_from_belief_map(origin_hms_tensor, normalization_method=6)
+        hms = np.asarray(origin_hms_img)
         
-        blend_img = Image.blend(origin_hms_img, img, alpha=0.5)
         
+        #print("hms", hms.shape)
+        #print("img", img.shape)
+        assert img.shape == hms.shape # H x W x C
+        #img = img.transpose(2, 0, 1) # C x H x W
+        #hms = hms.transpose(2, 0, 1) # C x H x W
+        C, H, W = img.shape
+        out = np.zeros((C, H, W))
+        print("max", np.max(hms))
+        print("min", np.min(hms))
+        
+#        th = 0.4 * 255
+        #index_full = np.where(hms > 0)
+        out[index_full] = hms[index_full] * 0.5 + img[index_full] * 0.5
+        #index_zero = np.where(hms == 0)
+        out[index_zero] = img[index_zero] * 0.9 + hms[index_zero] * 0.1
+#        #out = 0.5 * hms + 0.5 * img
+#        # out = cv2.cvtColor(out, cv2.COLOR_BGR2RGB)
+#        #out = out.transpose(1, 2, 0)
+        blend_img = Image.fromarray(np.uint8(out))
+        img = Image.fromarray(np.uint8(img)) 
+#        blend_img = Image.blend(origin_hms_img, img, alpha=0.5)
+#        img_brightness = ImageEnhance.Brightness(blend_img)
+#        blend_img = img_brightness.enhance(1.5)
+        #blend_img = Image.blend(blend_img, img, alpha=0.5)
+        
+
+        detected_kps = detected_kps.tolist()
+        gt_kps_raw = []
+        trans = get_affine_transform(meta["c"], meta["s"], 0, (meta["inp_width"], meta["inp_height"]), inv=1)
         for idx, dt_kp_raw in enumerate(detected_kps):
             ct_dt = [0,0]
             ct_dt[0] = np.clip(dt_kp_raw[0], 0, meta["width"]-1)
@@ -404,6 +509,11 @@ class DreamDetector(object):
         # hm_whole_mosaic.save(os.path.join(save_dir, f"{str(i).zfill(5)}_heatmap.png"))
         blend_img.save(os.path.join(save_dir, f"{str(i).zfill(5)}_blend_img.png"))
         origin_hms_img.save(os.path.join(save_dir, f"{str(i).zfill(5)}_hms.png"))
+
+
+        return 
+        
+
     
     def _transform_scale(self, image, scale=1):
       '''
@@ -448,6 +558,8 @@ class DreamDetector(object):
       trans_input = get_affine_transform(c, s, 0, [inp_width, inp_height])
       out_height =  inp_height // self.opt.down_ratio
       out_width =  inp_width // self.opt.down_ratio
+      out_height = int(out_height)
+      out_width = int(out_width)
       trans_output = get_affine_transform(c, s, 0, [out_width, out_height])
       #t2 = time.time()
       #print("t2 - t1", t2 - t1)
@@ -489,7 +601,7 @@ class DreamDetector(object):
         meta['pre_dets'] = input_meta['pre_dets']
       if 'cur_dets' in input_meta:
         meta['cur_dets'] = input_meta['cur_dets']
-        
+      # print("meta", meta)
       #t5 = time.time()
       #print('t5 - t4', t5 - t4)
       return images, meta
@@ -594,6 +706,8 @@ class DreamDetector(object):
         # print('height', meta['height'])
         pre_hm = dream.utilities.get_prev_hm_wo_noise(prev_kp_projs_dt, trans_input, inp_width, inp_height, meta['width'], meta['height'])
         # pre_hm = dream.utilities.get_prev_hm_wo_noise_old(kps_raw_np, trans_input, inp_width, inp_height)
+        self.pre_hm_teaser = dream.utilities.get_prev_hm_wo_noise_teaser(prev_kp_projs_dt, trans_input, inp_width, inp_height, meta['width'], meta['height'])
+        self.pre_hm_teaser = torch.from_numpy(self.pre_hm_teaser).view(1, 1, inp_height, inp_width)
         pre_hm = torch.from_numpy(pre_hm).view(1, 1, inp_height, inp_width)
         repro_hm = dream.utilities.get_prev_hm_wo_noise(next_kp_projs_est, trans_input,inp_width, inp_height, meta['width'], meta['height'])
         # repro_hm = dream.utilities.get_prev_hm_wo_noise_old(next_kp_projs_est, trans_input,inp_width, inp_height)
@@ -780,7 +894,10 @@ class DreamDetector(object):
 #              pass
       for det in dets:
           # print('ct_wreg', det['ct_wreg'])
-          score, clas, ct_wreg = det["score"], det["class"], det["ct_wreg"].tolist()
+          if self.is_ct:
+              score, clas, ct_wreg = det["score"], det["class"], det["ct_wreg"].tolist()
+          else:
+              score, clas, ct_wreg = det["score"], det["class"], det["ct"].tolist()
           # score, clas, ct_wreg = det["score"], det["class"], det["ct"].tolist() 
           cls[clas]["x"].append([score, ct_wreg[0]])
           cls[clas]["y"].append([score, ct_wreg[1]]) 
@@ -1102,6 +1219,8 @@ class DreamDetector(object):
         torch.cuda.synchronize()
         if self.phase == "CenterTrack+Repro":
             output = self.model(images, pre_images, repro_hms)[-1]
+        elif self.phase == "Dream":
+            output = self.model(images)[-1]
         elif self.phase == "PlanA":
             output = self.model(images, pre_images, pre_hms, repro_hms)[-1]
             # print("next hm's shape", output["hm"].shape)

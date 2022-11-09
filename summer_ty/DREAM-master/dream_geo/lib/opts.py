@@ -60,6 +60,8 @@ class opts(object):
                              help='used when training in slurm clusters.')
 
     # log
+    self.parser.add_argument('--note', type=str, default=None)
+    self.parser.add_argument("--is_real_ros", action="store_true")
     self.parser.add_argument('--is_real', default=False, help="infer in different real datasets")
     self.parser.add_argument("--rf", action="store_true")
     self.parser.add_argument("--ct_modify",action="store_true")
@@ -91,6 +93,9 @@ class opts(object):
     self.parser.add_argument('--show_trace', action='store_true')
 
     # model
+    self.parser.add_argument('--dream_mode',default="vgg")
+    self.parser.add_argument('--dream_deconv_decoder', action="store_true")
+    self.parser.add_argument('--is_ct', action="store_false")
     self.parser.add_argument('--arch', default='dla_34', 
                              help='model architecture. Currently tested'
                                   'res_18 | res_101 | resdcn_18 | resdcn_101 |'
@@ -104,7 +109,7 @@ class opts(object):
                                   '64 for resnets and 256 for dla.')
     self.parser.add_argument('--num_head_conv', type=int, default=1)
     self.parser.add_argument('--head_kernel', type=int, default=3, help='')
-    self.parser.add_argument('--down_ratio', type=int, default=4,
+    self.parser.add_argument('--down_ratio', type=float, default=4.0,
                              help='output stride. Currently only supports 4.')
     self.parser.add_argument('--not_idaup', action='store_true')
     self.parser.add_argument('--num_classes', type=int, default=-1)

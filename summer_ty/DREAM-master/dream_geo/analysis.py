@@ -6,7 +6,7 @@ import csv
 import math
 import os
 from PIL import Image as PILImage
-
+import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 from ruamel.yaml import YAML
@@ -776,7 +776,6 @@ def analyze_ndds_dataset(
 
 def solve_multiframe_pnp_real(
     gt_kps_pos_lists,
-    # gt_kps_proj_lists,
     dt_kps_proj_lists,
     opt,
     keypoint_names,
@@ -799,8 +798,10 @@ def solve_multiframe_pnp_real(
     # dt_kps_proj_lists 为一个长为M的lists,每个元素为7x2的list表示2D坐标
     # gt_kps_pos_lists 为一个长为M的lists,每个元素为7x3的list表示3D坐标
     num_of_all_frames = len(dt_kps_proj_lists)
+    # print('len(dt)', len(dt_kps_proj_lists))
+    # print('len(gt)', len(gt_kps_pos_lists))
     assert len(dt_kps_proj_lists) == len(gt_kps_pos_lists)
-    assert len(dt_kps_proj_lists) == len(gt_kps_proj_lists)
+    # assert len(dt_kps_proj_lists) == len(gt_kps_proj_lists)
 
     dt_kps_proj_nps = np.array(dt_kps_proj_lists) # M x 7 x 2
     gt_kps_pos_nps = np.array(gt_kps_pos_lists) # M x 7 x 3
@@ -814,7 +815,9 @@ def solve_multiframe_pnp_real(
     if comb_nums > N:
         pnp_index = []
         for i in range(N):
-            pnp_index.append(random.sample(F, multi_frame))
+            random_index = random.sample(range(num_of_all_frames), multi_frame)
+            # print("random_index", random_index)
+            pnp_index.append(random_index)
     else:
         pnp_index = [list(combinations(F, multi_frame))]
     
@@ -830,6 +833,8 @@ def solve_multiframe_pnp_real(
     nums = sample_dt_kps_proj_nps.shape[0]
     all_n_inframe_projs_gt = []
     pnp_add = []
+    poses_xyzxyzw = []
+    add_and_index = []
     for idx in range(nums):
         this_dt_kps_proj, this_gt_kps_pos = sample_dt_kps_proj_nps[idx], sample_gt_kps_pos_nps[idx]
         # this_dt_kps_proj : m x 7 x 2
@@ -848,6 +853,7 @@ def solve_multiframe_pnp_real(
         # n_inframe_projs_gt = len(idx_good_detections_rows)
         pnp_retval, translation, quaternion = dream.geometric_vision.solve_pnp(
                 kp_pos_gt_pnp, kp_projs_est_pnp, camera_K)
+        # print('pnp_index', pnp_index)
         if pnp_retval:
             if opt.rf:
                 # print("Introducing 3D refinement!!!")
@@ -869,7 +875,7 @@ def solve_multiframe_pnp_real(
                 
                 kp, _ = x2d_rep.shape
                 distance_sq = np.linalg.norm((x2d-x2d_rep), axis=-1)**2
-                distances += distance_sq.tolist()
+                # distances += distance_sq.tolist()
                 distance_sq = distance_sq.reshape(kp, 1)
                 distance_sq = np.repeat(distance_sq, 2, axis=-1)
                 # print("dis", distance_sq)
@@ -907,8 +913,8 @@ def solve_multiframe_pnp_real(
                     translation, quaternion, kp_pos_gt_pnp, camera_K
                 )
                 
-                print("refine add", add1)
-                print("original add", add2)
+                # print("refine add", add1)
+                # print("original add", add2)
                     
                 add = min(add1, add2)
             else:
@@ -916,6 +922,8 @@ def solve_multiframe_pnp_real(
                 add = dream.geometric_vision.add_from_pose(
                     translation, quaternion, kp_pos_gt_pnp, camera_K
                 )
+            # print("idx", idx)
+            # add_and_index.append([add, pnp_index[0][idx]])
         else:
             poses_xyzxyzw.append([-999.99] * 7)
             add = -999.99
@@ -978,6 +986,14 @@ def solve_multiframe_pnp_real(
                 print_to_screen_and_file(f, "No frames where PNP is possible.")
 
             print_to_screen_and_file(f, "")
+        
+    # add_and_index.sort()
+    # add_and_index_np = np.array(add_and_index)
+    
+    # with open('/root/autodl-tmp/yangtian/summer_ty/DREAM-master/dream_geo/ours.pk','wb') as file:
+        # pickle.dump(add_and_index_np,file)
+    
+    return pnp_results
 
 
 
@@ -1201,8 +1217,8 @@ def solve_multiframe_pnp(
                             translation, quaternion, kp_pos_gt_pnp, camera_K
                         )
                         
-                        print("refine add", add1)
-                        print("original add", add2)
+                        # print("refine add", add1)
+                        # print("original add", add2)
                             
                         add = min(add1, add2)
                     else:
@@ -1281,6 +1297,7 @@ def solve_multiframe_pnp(
                 print_to_screen_and_file(f, "No frames where PNP is possible.")
 
             print_to_screen_and_file(f, "")
+    return pnp_results
 
     
         
@@ -1975,6 +1992,8 @@ def pnp_metrics(
     mean_add = np.mean(add_pnp_found)
     median_add = np.median(add_pnp_found)
     std_add = np.std(add_pnp_found)
+    max_add = np.max(add_pnp_found)
+    min_add = np.min(add_pnp_found)
 
     num_pnp_possible = len(
         np.where(num_inframe_projs_gt >= num_min_inframe_projs_gt_for_pnp)[0]
@@ -2002,6 +2021,8 @@ def pnp_metrics(
         "add_mean": mean_add,
         "add_median": median_add,
         "add_std": std_add,
+        "add_max": max_add,
+        "add_min": min_add,
         "add_auc": auc,
         "add_auc_thresh": add_auc_threshold,
     }

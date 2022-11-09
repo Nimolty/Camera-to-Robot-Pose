@@ -12,7 +12,7 @@ from .networks.resdcn import PoseResDCN
 from .networks.resnet import PoseResNet
 from .networks.dlav0 import DLASegv0
 from .networks.generic_network import GenericNetwork
-from .networks.hourglass import DreamHourglass
+from .networks.hourglass import DreamHourglass, ResnetSimple
 
 _network_factory = {
   'resdcn': PoseResDCN,
@@ -35,10 +35,14 @@ def create_model(arch, head, head_conv, opt=None):
   model = model_class(num_layers, heads=head, head_convs=head_conv, opt=opt)
   return model
 
-def create_dream_hourglass():
+def create_dream_hourglass(mode="vgg", deconv_decoder=False):
     n_keypoints = 7
-    n_image_input_channels = 7
-    model = DreamHourglass(n_keypoints=n_keypoints, n_image_input_channels=n_image_input_channels)
+    n_image_input_channels = 3
+    if mode == "vgg":  
+        model = DreamHourglass(n_keypoints=n_keypoints, n_image_input_channels=n_image_input_channels,\
+    deconv_decoder=deconv_decoder)
+    elif mode == "resnet":
+        model = ResnetSimple(n_keypoints=n_keypoints, full=deconv_decoder)
     return model
 
 def load_model(model, model_path, opt, optimizer=None):

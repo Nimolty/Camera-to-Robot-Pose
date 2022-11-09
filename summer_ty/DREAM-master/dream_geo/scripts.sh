@@ -12,7 +12,7 @@
 
 #python Dream_ct_inference.py tracking --load_model /mnt/data/Dream_ty/Dream_model/center-dream/tracking/4/ckpt/model_12.pth --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 3
 #
-#python Dream_ct_inference.py tracking --load_model /mnt/data/Dream_ty/Dream_model/center-dream/tracking/4/ckpt/model_6.pth --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 0
+#python Dream_ct_inference.py tracking --load_model /mnt/data/Dream_ty/Dream_model/center-dream/tracking/4/ckpt/model_6.pth --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 0 
 #
 #
 #python Dream_main.py tracking --exp_id 4  --pre_hm --same_aug --hm_disturb 0.05 --lost_disturb 0.4 --fp_disturb 0.1 --gpus 3
@@ -188,16 +188,49 @@ python Dream_main.py tracking --exp_id 62 --pre_hm --same_aug --hm_disturb 0.75 
 python Dream_main.py tracking --exp_id 63 --pre_hm --same_aug --hm_disturb 0.75 --lost_disturb 0.2 --fp_disturb 0.1 --gpus 3 --arch dlapawd_34 --phase PlanA_win --dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/franka_data_1020/" --add_dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/near_franka_data_1024/" --is_real panda-3cam_realsense --num_epochs 20 --pos_embed
 
 
+####################################### 多帧比较 ########################################
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/50/ckpt/model_20.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense --is_real_ros --rf --note real_1107
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/50/ckpt/model_20.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense --is_real_ros --rf --note real_1108
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/50/ckpt/model_20.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense --is_real_ros --note real_1108
+
+
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/50/ckpt/model_20.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense --is_real_ros --note real_1107_with_background
+python easy_hand_eye_inference.py tracking --note real_1107
+
+python easy_hand_eye_inference.py tracking --note real_1108
+
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/50/ckpt/model_20.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --infer_dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/syn_test/" 
+
+######################################多帧和dream比较####################################
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/zekaiyin/data/all_ckpt/baseline/vgg_q/vgg_q_baseline_lr_0.00015_bs_16_seed_5_epoch_50_try_1/epoch_11.pth  --phase Dream --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense --is_real_ros --note real_1108 --is_ct
+
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/zekaiyin/data/all_ckpt/baseline/vgg_f/vgg_f_baseline_lr_0.00015_bs_16_seed_5_epoch_50_try_0/epoch_11.pth  --phase Dream --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense --is_real_ros --note real_1108 --is_ct --dream_deconv_decoder
+
+# vgg-q
+python Dream_ct_inference.py tracking --load_model "/root/autodl-tmp/yangtian/summer_ty/DREAM-master/dream_pretrained_models/panda_dream_vgg_q.pth"  --phase Dream --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense --is_real_ros --note real_1107_with_background --is_ct
+
+# vgg-f
+python Dream_ct_inference.py tracking --load_model "/root/autodl-tmp/yangtian/summer_ty/DREAM-master/dream_pretrained_models/panda_dream_vgg_f.pth"  --phase Dream --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense --is_real_ros --note real_1107_with_background --is_ct --dream_deconv_decoder
+
+# resnet-h 
+python Dream_ct_inference.py tracking --load_model "/root/autodl-tmp/yangtian/summer_ty/DREAM-master/dream_pretrained_models/panda_dream_resnet_h.pth"  --phase Dream --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense --is_real_ros --note real_1107_with_background --is_ct --dream_mode resnet --down_ratio 1.92
+
+# resnet-f
+python Dream_ct_inference.py tracking --load_model "/root/autodl-tmp/yangtian/summer_ty/DREAM-master/dream_pretrained_models/panda_dream_resnet_f.pth"  --phase Dream --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense --is_real_ros --note real_1107_with_background --is_ct --dream_mode resnet --dream_deconv_decoder --down_ratio 0.961
+#########################################################################################
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/50/ckpt/model_20.pth --arch dlaabla_34 --phase ablation_shared_repro --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense 
+
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/50/ckpt/model_20.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --infer_dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/pure_test/" --rf
+
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/52/ckpt/model_20.pth  --phase CenterTrack --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --infer_dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/pure_test/"
+
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/53/ckpt/model_20.pth  --phase CenterNet --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --infer_dataset "/root/autodl-tmp/camera_to_robot_pose/Dream_ty/test_1020/pure_test/"
+
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/50/ckpt/model_15.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_azure  --rf
 
 
 
-
-
-python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/58/ckpt/model_17.pth --arch dlaabla_34 --phase ablation_shared_repro --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense 
-
-python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/50/ckpt/model_20.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense 
-
-python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/58/ckpt/model_20.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense --ks1 16 --ks2 8 --ks3 4 --rf
+python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/61/ckpt/model_16.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_azure --k_list_1 2 --k_list_2 2 --k_list_3 2
 
 python Dream_ct_inference.py tracking --load_model /root/autodl-tmp/camera_to_robot_pose/Dream_ty/Dream_model/center-dream/tracking/50/ckpt/model_20.pth --arch dlapawd_34 --phase PlanA_win --pre_hm --track_thresh 0.001 --test_focal_length 633 --gpus 4 --is_real panda-3cam_realsense  --rf
 ###############################################在全部的syn和pure上####################################################################
